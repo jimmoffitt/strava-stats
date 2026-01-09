@@ -1,6 +1,6 @@
 ## What is this thing? 
 
-Not sure, but I know my Strava 2025 wrapped did not provide many data views I was interested in. I also have strong opinions that 
+Not sure, but I know my Strava 2025 wrapped did not provide many data views I was interested in. I also have strong opinions that "wrapped' packages should not be generated until January 1. Or at least let us paying customers generate a customized one when we want.
 
 ### What code are we writing? 
 
