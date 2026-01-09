@@ -75,7 +75,7 @@ strava-stats/
         }
     ]
 }
-'''
+```
 
 ### Entire object
 
