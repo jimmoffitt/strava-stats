@@ -1,5 +1,5 @@
 import pandas as pd
-from src.process_data import calculate_annual_stats
+from process_data import calculate_annual_stats
 
 def test_calculate_annual_stats():
     # 1. Setup dummy data
