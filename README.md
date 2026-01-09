@@ -75,7 +75,7 @@ strava-stats/
         }
     ]
 }
-'''
+```
 
 ### Entire object
 
@@ -156,11 +156,11 @@ strava-stats/
 
 ### Annual bike, ski, and swim distances
 
-![Annual distances](output/4_annual_stats.png)
+![Annual distances](data/images/4_annual_stats.png)
 
 ### Activity types
 
-![Annual activity types](output/2_sport_stats.png)
+![Annual activity types](data/images/2_sport_stats.png)
 
 ### Bike stats
-![Bike stats](output/3_bike_stats.png)
+![Bike stats](data/images/3_bike_stats.png)
