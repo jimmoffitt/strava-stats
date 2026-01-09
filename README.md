@@ -1,7 +1,27 @@
-
-
-
 ## What is this thing? 
+
+Not sure, but I know my Strava 2025 wrapped did not provide many data views I was interested in. I also have strong opinions that 
+
+### what code are we writing? 
+
+Will start with Streamlit for the app framework, and will separate the data getting, the data analysis,and the resulting publication concerns. 
+
+strava-stats/
+├── data/                    # The "Local Data Store"
+│   ├── raw/                 # Raw JSON/CSV from Strava (don't edit these)
+│   ├── processed/           # Cleaned data ready for analysis
+│   └── images/              # Generated static images (png/jpg)
+│
+├── src/                     # The stuff that knows how to do specific things
+│   ├── __init__.py          # Makes this a generic Python package
+│   ├── strava_client.py     # Connects to API, handles auth/refresh tokens
+│   ├── processing.py        # Pandas logic: cleaning, aggregation, math
+│   └── plotting.py          # Generates Figure objects or saves PNGs
+│
+├── app.py                   # The App! The UI, and process manager 
+├── .env                     # Secrets (API Client ID, Secret) 
+├── .gitignore               # Ignore .env, data/, and __pycache__
+└── requirements.txt         # Dependencies
 
 
 ## Strava activity data
