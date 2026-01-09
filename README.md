@@ -2,10 +2,13 @@
 
 Not sure, but I know my Strava 2025 wrapped did not provide many data views I was interested in. I also have strong opinions that 
 
-### what code are we writing? 
+### What code are we writing? 
 
 Will start with Streamlit for the app framework, and will separate the data getting, the data analysis,and the resulting publication concerns. 
 
+Are there other frameworks to port to later? Rio? 
+
+```
 strava-stats/
 ├── data/                    # The "Local Data Store"
 │   ├── raw/                 # Raw JSON/CSV from Strava (don't edit these)
@@ -22,7 +25,7 @@ strava-stats/
 ├── .env                     # Secrets (API Client ID, Secret) 
 ├── .gitignore               # Ignore .env, data/, and __pycache__
 └── requirements.txt         # Dependencies
-
+```
 
 ## Strava activity data
 
@@ -73,9 +76,6 @@ strava-stats/
     ]
 }
 '''
-
-
-
 
 ### Entire object
 
@@ -150,4 +150,10 @@ strava-stats/
         }
     ]
 }
-'''
+```
+
+## Example output
+
+### Annual bike, ski, and swim distances
+
+![Annual distances](output/4_annual_stats.png)
