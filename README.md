@@ -1,11 +1,10 @@
 
 
 
+## What is this thing? 
 
 
-
-
-## Strava data
+## Strava activity data
 
 ### Attributes of top interest
 
