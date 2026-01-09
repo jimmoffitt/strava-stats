@@ -157,3 +157,10 @@ strava-stats/
 ### Annual bike, ski, and swim distances
 
 ![Annual distances](output/4_annual_stats.png)
+
+### Activity types
+
+![Annual activity types](output/2_sport_stats.png)
+
+### Bike stats
+![Bike stats](output/3_bike_stats.png)
