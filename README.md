@@ -164,3 +164,5 @@ strava-stats/
 
 ### Bike stats
 ![Bike stats](data/images/3_bike_stats.png)
+
+![annual bike miles](data/images/chart_activities_per_year.png)
