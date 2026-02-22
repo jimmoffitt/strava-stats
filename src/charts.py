@@ -142,3 +142,60 @@ def make_period_comparison_chart(
     )
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
+
+
+SKI_BLUE = '#4A90D9'
+SKI_BLUE_LIGHT = '#A8CBF0'
+
+
+def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
+    """
+    Bar chart of total vertical feet by ski season.
+    Current/in-progress season shown in lighter blue; past seasons in solid blue.
+    Optional dashed goal line.
+    """
+    colors = [
+        SKI_BLUE_LIGHT if int(row['season_key']) >= current_season_key else SKI_BLUE
+        for _, row in seasonal_df.iterrows()
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=seasonal_df['season_label'],
+        y=seasonal_df['vert_ft'],
+        marker_color=colors,
+        text=[f"{v:,.0f}" for v in seasonal_df['vert_ft']],
+        textposition='outside',
+    ))
+
+    current_rows = seasonal_df[seasonal_df['season_key'] >= current_season_key]
+    for _, row in current_rows.iterrows():
+        fig.add_annotation(
+            x=row['season_label'],
+            y=row['vert_ft'],
+            text="YTD",
+            showarrow=False,
+            yshift=28,
+            font=dict(size=10, color=SKI_BLUE_LIGHT),
+        )
+
+    if goal_vert and goal_vert > 0:
+        fig.add_hline(
+            y=goal_vert,
+            line_dash='dash',
+            line_color='gray',
+            line_width=1.5,
+            annotation_text=f"Goal: {goal_vert:,} ft",
+            annotation_position='top right',
+            annotation_font_size=11,
+        )
+
+    fig.update_layout(
+        title="Season Vertical Feet",
+        xaxis_title="Season",
+        yaxis_title="Vertical Feet",
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig

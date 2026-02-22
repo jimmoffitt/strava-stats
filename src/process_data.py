@@ -169,6 +169,71 @@ def get_period_stats(bike_df, year, month=None, iso_week=None):
     }
 
 
+def _ski_season_key(dt):
+    """Returns the start year of the ski season for a datetime. Oct-Dec → same year; Jan-Sep → prior year."""
+    return dt.year if dt.month >= 10 else dt.year - 1
+
+
+def aggregate_ski_by_season(ski_df):
+    """
+    Returns a DataFrame with one row per ski season.
+    Columns: season_key, season_label, days, sessions, vert_ft, distance_miles, hours.
+    """
+    ski_df = ski_df.copy()
+    ski_df['season_key'] = ski_df['start_date_local'].apply(_ski_season_key)
+    ski_df['date'] = ski_df['start_date_local'].dt.date
+    ski_df['hours'] = ski_df['moving_time'] / 3600.0
+
+    agg = (
+        ski_df.groupby('season_key')
+        .agg(
+            days=('date', 'nunique'),
+            sessions=('id', 'count'),
+            vert_ft=('elevation_feet', 'sum'),
+            distance_miles=('distance_miles', 'sum'),
+            hours=('hours', 'sum'),
+        )
+        .reset_index()
+        .sort_values('season_key')
+    )
+    agg['season_label'] = agg['season_key'].apply(lambda y: f"{y}-{str(y + 1)[-2:]}")
+    return agg
+
+
+def get_ski_days_table(ski_df, season_key):
+    """
+    Returns a DataFrame with one row per calendar day in the given season.
+    Multiple sessions on the same day are aggregated; activity names are joined.
+    """
+    ski_df = ski_df.copy()
+    ski_df['season_key'] = ski_df['start_date_local'].apply(_ski_season_key)
+    ski_df['date'] = ski_df['start_date_local'].dt.date
+    ski_df['hours'] = ski_df['moving_time'] / 3600.0
+
+    season = ski_df[ski_df['season_key'] == season_key].copy()
+    if season.empty:
+        return pd.DataFrame(columns=['date', 'activity', 'type', 'vert_ft', 'distance_mi', 'hours'])
+
+    # Aggregate numeric cols by date
+    numeric = (
+        season.groupby('date')
+        .agg(
+            vert_ft=('elevation_feet', 'sum'),
+            distance_mi=('distance_miles', 'sum'),
+            hours=('hours', 'sum'),
+            sessions=('id', 'count'),
+        )
+        .reset_index()
+    )
+
+    # Join activity names and pick dominant type per day
+    names = season.groupby('date')['name'].apply(' + '.join).reset_index().rename(columns={'name': 'activity'})
+    types = season.groupby('date')['final_type'].first().reset_index().rename(columns={'final_type': 'type'})
+
+    result = numeric.merge(names, on='date').merge(types, on='date')
+    return result.sort_values('date', ascending=False).reset_index(drop=True)
+
+
 def summarize_stats(df, gear_map=None):
     """
     Aggregates data into the specific dictionary structure required by the Publish module.
