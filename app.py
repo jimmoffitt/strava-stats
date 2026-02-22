@@ -12,10 +12,11 @@ import streamlit as st
 from src import config, process_data
 from src.charts import (
     make_period_comparison_chart,
+    make_season_vert_chart,
     make_year_dist_chart,
     make_year_time_chart,
 )
-from src.config import BIKE_TYPES, GEAR_FALLBACKS
+from src.config import BIKE_TYPES, GEAR_FALLBACKS, SKI_TYPES
 
 # ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
@@ -381,6 +382,90 @@ def render_bike_tab(bike_df, gear_map):
 
 
 # ---------------------------------------------------------------------------
+# Ski tab
+# ---------------------------------------------------------------------------
+def render_ski_tab(ski_df, settings):
+    if ski_df.empty:
+        st.info("No ski activities found in the archive.")
+        return
+
+    goal_vert = settings['goals']['ski_season_vert_ft']
+    ski_vert_per_mile = settings['conversions']['ski_vert_per_mile']
+
+    today = date.today()
+    current_season_key = today.year if today.month >= 10 else today.year - 1
+
+    seasonal_df = process_data.aggregate_ski_by_season(ski_df)
+
+    # --- All-seasons chart ---
+    st.plotly_chart(
+        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert),
+        use_container_width=True,
+    )
+
+    # --- Season selector ---
+    season_labels = seasonal_df['season_label'].tolist()[::-1]   # newest first
+    season_keys = seasonal_df['season_key'].tolist()[::-1]
+
+    default_idx = 0
+    if current_season_key in season_keys:
+        default_idx = season_keys.index(current_season_key)
+    elif season_keys:
+        default_idx = 0  # most recent available
+
+    selected_label = st.selectbox("Season", season_labels, index=default_idx, key="ski_season")
+    selected_key = season_keys[season_labels.index(selected_label)]
+
+    st.divider()
+
+    # --- Season summary metrics ---
+    row = seasonal_df[seasonal_df['season_key'] == selected_key].iloc[0]
+    equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
+    avg_vert = row['vert_ft'] / row['days'] if row['days'] > 0 else 0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Days on snow", int(row['days']))
+    m2.metric("Sessions", int(row['sessions']))
+    m3.metric("Total vert", f"{row['vert_ft']:,.0f} ft")
+    m4.metric("Avg vert / day", f"{avg_vert:,.0f} ft")
+    m5.metric("Equity miles", f"{equity_miles:,.0f} mi")
+
+    # Goal progress bar (show for any season, not just current)
+    if goal_vert > 0:
+        progress = min(row['vert_ft'] / goal_vert, 1.0)
+        pct = progress * 100
+        label = f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({pct:.0f}%)"
+        st.progress(progress, text=label)
+
+    st.divider()
+
+    # --- Ski days table ---
+    st.subheader(f"{selected_label} — Ski Days")
+    days_df = process_data.get_ski_days_table(ski_df, selected_key)
+
+    if days_df.empty:
+        st.info("No ski days recorded for this season yet.")
+        return
+
+    # Format for display
+    display = days_df.copy()
+    display['date'] = pd.to_datetime(display['date']).dt.strftime('%a %b %-d, %Y')
+    display['vert_ft'] = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
+    display['distance_mi'] = display['distance_mi'].apply(lambda x: f"{x:.1f}")
+    display['hours'] = display['hours'].apply(lambda x: f"{x:.1f}")
+    display = display.drop(columns=['sessions'])
+    display = display.rename(columns={
+        'date': 'Date',
+        'activity': 'Activity',
+        'type': 'Type',
+        'vert_ft': 'Vert (ft)',
+        'distance_mi': 'Dist (mi)',
+        'hours': 'Hours',
+    })
+    st.dataframe(display, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Settings tab
 # ---------------------------------------------------------------------------
 def render_settings_tab(settings):
@@ -497,6 +582,7 @@ if df.empty:
     st.stop()
 
 bike_df = df[df['final_type'].isin(BIKE_TYPES)].copy()
+ski_df = df[df['final_type'].isin(SKI_TYPES)].copy()
 
 tab_bike, tab_ski, tab_swim, tab_equity, tab_settings = st.tabs(
     ["Bike", "Ski", "Swim", "Mile Equity", "Settings"]
@@ -506,7 +592,7 @@ with tab_bike:
     render_bike_tab(bike_df, gear_map)
 
 with tab_ski:
-    st.info("Ski tab — coming soon.")
+    render_ski_tab(ski_df, settings)
 
 with tab_swim:
     st.info("Swim tab — coming soon.")
