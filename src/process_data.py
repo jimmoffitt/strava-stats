@@ -1,5 +1,6 @@
 # src/process_data.py
 import pandas as pd
+from datetime import date, timedelta
 
 def process_activities(activities_list):
     """
@@ -46,6 +47,127 @@ def _determine_activity_type(row):
     if 'GEQ' in name: return 'Gardening'
     
     return strava_type
+
+def aggregate_by_year(bike_df):
+    """
+    Returns a DataFrame with one row per year: year, miles, km, hours, count.
+    """
+    bike_df = bike_df.copy()
+    bike_df['km'] = bike_df['distance'] / 1000.0
+    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+    agg = (
+        bike_df.groupby('year')
+        .agg(
+            miles=('distance_miles', 'sum'),
+            km=('km', 'sum'),
+            hours=('hours', 'sum'),
+            count=('id', 'count'),
+        )
+        .reset_index()
+        .sort_values('year')
+    )
+    return agg
+
+
+def aggregate_by_month(bike_df, year, month):
+    """
+    Returns a DataFrame with one row per day-of-month for the given year/month.
+    Missing days are filled with 0s.
+    """
+    import calendar
+    bike_df = bike_df.copy()
+    bike_df['km'] = bike_df['distance'] / 1000.0
+    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+    bike_df['day'] = bike_df['start_date_local'].dt.day
+
+    mask = (bike_df['start_date_local'].dt.year == year) & (bike_df['start_date_local'].dt.month == month)
+    filtered = bike_df[mask]
+
+    agg = (
+        filtered.groupby('day')
+        .agg(
+            miles=('distance_miles', 'sum'),
+            km=('km', 'sum'),
+            hours=('hours', 'sum'),
+            count=('id', 'count'),
+        )
+        .reset_index()
+    )
+
+    # Left-join to all days in the month so missing days show 0
+    num_days = calendar.monthrange(year, month)[1]
+    all_days = pd.DataFrame({'day': range(1, num_days + 1)})
+    result = all_days.merge(agg, on='day', how='left').fillna(0)
+    result['day'] = result['day'].astype(int)
+    return result
+
+
+def aggregate_by_iso_week(bike_df, iso_year, iso_week):
+    """
+    Returns a DataFrame with one row per weekday (Mon–Sun) for the given ISO week.
+    Missing days are filled with 0s.
+    """
+    bike_df = bike_df.copy()
+    bike_df['km'] = bike_df['distance'] / 1000.0
+    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+
+    # Compute Monday of the target ISO week
+    monday = date.fromisocalendar(iso_year, iso_week, 1)
+    sunday = monday + timedelta(days=6)
+
+    # Use .dt.date for comparison (start_date_local may be tz-aware)
+    dates = bike_df['start_date_local'].dt.date
+    mask = (dates >= monday) & (dates <= sunday)
+    filtered = bike_df[mask].copy()
+
+    # Weekday: 0=Mon, 6=Sun
+    filtered['weekday'] = filtered['start_date_local'].dt.weekday
+
+    agg = (
+        filtered.groupby('weekday')
+        .agg(
+            miles=('distance_miles', 'sum'),
+            km=('km', 'sum'),
+            hours=('hours', 'sum'),
+            count=('id', 'count'),
+        )
+        .reset_index()
+    )
+
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    all_days = pd.DataFrame({'weekday': range(7), 'day_label': day_labels})
+    result = all_days.merge(agg, on='weekday', how='left').fillna(0)
+    result['weekday'] = result['weekday'].astype(int)
+    return result
+
+
+def get_period_stats(bike_df, year, month=None, iso_week=None):
+    """
+    Returns scalar summary dict for a period: {miles, km, hours, count}.
+    Pass month for month-mode, iso_week for week-mode.
+    """
+    bike_df = bike_df.copy()
+    bike_df['km'] = bike_df['distance'] / 1000.0
+    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+
+    if iso_week is not None:
+        monday = date.fromisocalendar(year, iso_week, 1)
+        sunday = monday + timedelta(days=6)
+        dates = bike_df['start_date_local'].dt.date
+        mask = (dates >= monday) & (dates <= sunday)
+    elif month is not None:
+        mask = (bike_df['start_date_local'].dt.year == year) & (bike_df['start_date_local'].dt.month == month)
+    else:
+        mask = bike_df['start_date_local'].dt.year == year
+
+    filtered = bike_df[mask]
+    return {
+        'miles': filtered['distance_miles'].sum(),
+        'km': filtered['km'].sum(),
+        'hours': filtered['hours'].sum(),
+        'count': len(filtered),
+    }
+
 
 def summarize_stats(df, gear_map=None):
     """

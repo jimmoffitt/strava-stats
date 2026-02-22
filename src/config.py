@@ -29,6 +29,32 @@ default_years = str(os.getenv('STRAVA_YEARS', '2025'))
 # Convert comma-string "2023,2024" -> List [2023, 2024]
 STRAVA_YEARS = [int(y.strip()) for y in default_years.split(',') if y.strip().isdigit()]
 
+# 5. Sport/Gear Constants
+BIKE_TYPES = ['Ride', 'VirtualRide', 'EBikeRide']
+
+# Historical gear that may be retired from Strava API but still in archive
+GEAR_FALLBACKS = {
+    'b6971509': 'Gravel bike (DB Haanjo Comp)',
+    'b11542587': 'Ferrazi Delano Peak Comp',
+}
+
+GEAR_MAP_FILE = os.path.join(DATA_DIR, 'gear_map.json')
+SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
+
+# Defaults used when settings.json doesn't exist yet
+DEFAULT_SETTINGS = {
+    'conversions': {
+        'swim_meters_per_mile': 100,   # 100 m swim = 1 equity mile
+        'ski_vert_per_mile': 1000,     # 1,000 vert ft = 1 equity mile
+    },
+    'goals': {
+        'annual_equity_miles': 3000,
+        'monthly_equity_miles': 250,
+        'ski_season_vert_ft': 200000,  # cumulative season total
+        'swim_monthly_meters': 10000,  # per-month target
+    },
+}
+
 def validate_config():
     if not CLIENT_ID or not CLIENT_SECRET:
         raise ValueError("❌ ERROR: Credentials not found in .local.env")

@@ -1,4 +1,6 @@
 import sys
+import os
+import json
 from src import config, fetch_data, process_data, publish_data
 
 def main():
@@ -10,6 +12,11 @@ def main():
         config.validate_config()
         token = fetch_data.get_access_token(config.TOKEN_FILE, config.CLIENT_ID, config.CLIENT_SECRET)
         gear_map = fetch_data.fetch_active_gear(token)
+        # Merge fallbacks (historical retired gear) + live data; live data wins
+        merged_gear = {**config.GEAR_FALLBACKS, **gear_map}
+        with open(config.GEAR_MAP_FILE, 'w') as f:
+            json.dump(merged_gear, f, indent=2)
+        print(f"Gear map written: {len(merged_gear)} bikes/shoes")
     except Exception as e:
         print(f"Setup failed: {e}")
         sys.exit(1)
