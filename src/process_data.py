@@ -97,6 +97,7 @@ def summarize_stats(df, gear_map=None):
         g_id = row['gear_id']
         if g_id: # Ignore None
             bike_name = gear_map.get(g_id, g_id) # Use name if found, else ID
+            bike_name = bike_name.encode('ascii', 'ignore').decode('ascii').strip()
             bike_list.append({
                 'bike': bike_name,
                 'miles': f"{row['distance_miles']:,.0f}"
