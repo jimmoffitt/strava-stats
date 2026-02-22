@@ -169,6 +169,140 @@ def get_period_stats(bike_df, year, month=None, iso_week=None):
     }
 
 
+def compute_wrapped_stats(df, year):
+    """
+    Returns a comprehensive dict of Wrapped-style stats for the given year.
+    All stats are derived from the processed activity DataFrame.
+    """
+    import calendar as cal
+
+    y_df = df[df['year'] == year].copy()
+    p_df = df[df['year'] == year - 1].copy()
+
+    if y_df.empty:
+        return {}
+
+    def _totals(d):
+        return {
+            'activities': len(d),
+            'miles':      d['distance_miles'].sum(),
+            'km':         (d['distance'] / 1000).sum(),
+            'hours':      d['moving_time'].sum() / 3600,
+            'vert_ft':    d['elevation_feet'].sum(),
+        }
+
+    curr = _totals(y_df)
+    prev = _totals(p_df)
+
+    # --- Monthly breakdown (all 12 months, fill 0s) ---
+    y_df['month'] = y_df['start_date_local'].dt.month
+    all_months = pd.DataFrame({
+        'month': range(1, 13),
+        'month_name': [cal.month_abbr[m] for m in range(1, 13)],
+    })
+    monthly_agg = (
+        y_df.groupby('month')
+        .agg(
+            activities=('id', 'count'),
+            miles=('distance_miles', 'sum'),
+            km=('distance', lambda x: x.sum() / 1000),
+            hours=('moving_time', lambda x: x.sum() / 3600),
+        )
+        .reset_index()
+    )
+    monthly = all_months.merge(monthly_agg, on='month', how='left').fillna(0)
+    monthly['month'] = monthly['month'].astype(int)
+
+    # --- Sport breakdown ---
+    sport = (
+        y_df.groupby('final_type')
+        .agg(
+            activities=('id', 'count'),
+            miles=('distance_miles', 'sum'),
+            km=('distance', lambda x: x.sum() / 1000),
+            hours=('moving_time', lambda x: x.sum() / 3600),
+            vert_ft=('elevation_feet', 'sum'),
+        )
+        .reset_index()
+        .sort_values('activities', ascending=False)
+    )
+
+    # --- Biggest week ---
+    iso = y_df['start_date_local'].dt.isocalendar()
+    y_df['iso_year'] = iso['year'].values
+    y_df['iso_week'] = iso['week'].values
+    weekly = y_df.groupby(['iso_year', 'iso_week'])['distance_miles'].sum()
+    if not weekly.empty:
+        bw_idx = weekly.idxmax()
+        biggest_week = {'miles': weekly.max(), 'label': f"Week {bw_idx[1]}, {bw_idx[0]}"}
+    else:
+        biggest_week = {'miles': 0, 'label': 'N/A'}
+
+    # --- Longest single activity ---
+    la_row = y_df.loc[y_df['distance_miles'].idxmax()]
+    longest_activity = {
+        'name':  la_row['name'],
+        'date':  la_row['start_date_local'].date(),
+        'miles': la_row['distance_miles'],
+        'type':  la_row['final_type'],
+    }
+
+    # --- Most elevation in a single day ---
+    y_df['date'] = y_df['start_date_local'].dt.date
+    daily_vert = y_df.groupby('date')['elevation_feet'].sum()
+    bv_date = daily_vert.idxmax()
+    best_vert_day = {'date': bv_date, 'vert_ft': daily_vert.max()}
+
+    # --- Social ---
+    total_kudos = int(y_df['kudos_count'].sum()) if 'kudos_count' in y_df.columns else 0
+    most_kudoed = None
+    if 'kudos_count' in y_df.columns and not y_df.empty:
+        mk_row = y_df.loc[y_df['kudos_count'].idxmax()]
+        most_kudoed = {
+            'name':  mk_row['name'],
+            'date':  mk_row['start_date_local'].date(),
+            'kudos': int(mk_row['kudos_count']),
+        }
+    group_rides = int((y_df['athlete_count'] > 1).sum()) if 'athlete_count' in y_df.columns else 0
+
+    # --- Achievements ---
+    total_prs          = int(y_df['pr_count'].sum())          if 'pr_count'          in y_df.columns else 0
+    total_achievements = int(y_df['achievement_count'].sum()) if 'achievement_count' in y_df.columns else 0
+
+    # --- Longest streak (consecutive active days) ---
+    dates = sorted(y_df['date'].unique())
+    max_streak = cur_streak = (1 if dates else 0)
+    for i in range(1, len(dates)):
+        if (dates[i] - dates[i - 1]).days == 1:
+            cur_streak += 1
+            max_streak = max(max_streak, cur_streak)
+        else:
+            cur_streak = 1
+
+    # --- Fun facts ---
+    fun_facts = {
+        'everests':   curr['vert_ft'] / 29032,   # Everest = 29,032 ft
+        'earth_pct':  curr['miles'] / 24901 * 100,  # Earth circumference
+        'days_moving': curr['hours'] / 24,
+    }
+
+    return {
+        'year':            year,
+        'totals':          curr,
+        'prior_totals':    prev,
+        'monthly':         monthly,
+        'sport_breakdown': sport,
+        'biggest_week':    biggest_week,
+        'longest_activity': longest_activity,
+        'best_vert_day':   best_vert_day,
+        'kudos':           {'total': total_kudos, 'most_kudoed': most_kudoed},
+        'group_rides':     group_rides,
+        'achievements':    {'prs': total_prs, 'total': total_achievements},
+        'longest_streak':  max_streak,
+        'fun_facts':       fun_facts,
+    }
+
+
 def _ski_season_key(dt):
     """Returns the start year of the ski season for a datetime. Oct-Dec → same year; Jan-Sep → prior year."""
     return dt.year if dt.month >= 10 else dt.year - 1

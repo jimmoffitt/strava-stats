@@ -144,6 +144,49 @@ def make_period_comparison_chart(
     return fig
 
 
+def make_monthly_chart(monthly_df, dist_col, dist_label):
+    """Bar chart of distance by month — 12 bars, 0-filled for empty months."""
+    fig = go.Figure(go.Bar(
+        x=monthly_df['month_name'],
+        y=monthly_df[dist_col],
+        marker_color=STRAVA_ORANGE,
+        text=[f"{v:,.0f}" if v > 0 else "" for v in monthly_df[dist_col]],
+        textposition='outside',
+    ))
+    fig.update_layout(
+        title=f"Distance by Month ({dist_label})",
+        xaxis_title="Month",
+        yaxis_title=dist_label,
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
+def make_sport_breakdown_chart(sport_df, dist_col, dist_label):
+    """Horizontal bar chart of distance by sport type, sorted ascending."""
+    sorted_df = sport_df.sort_values(dist_col, ascending=True)
+    fig = go.Figure(go.Bar(
+        x=sorted_df[dist_col],
+        y=sorted_df['final_type'],
+        orientation='h',
+        marker_color=STRAVA_ORANGE,
+        text=[f"{v:,.0f}" for v in sorted_df[dist_col]],
+        textposition='outside',
+    ))
+    fig.update_layout(
+        title=f"Distance by Sport ({dist_label})",
+        xaxis_title=dist_label,
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=60, r=60),
+        showlegend=False,
+    )
+    fig.update_xaxes(gridcolor='#eeeeee')
+    return fig
+
+
 SKI_BLUE = '#4A90D9'
 SKI_BLUE_LIGHT = '#A8CBF0'
 

@@ -40,6 +40,33 @@ def fetch_active_gear(access_token):
     for shoe in data.get('shoes', []): gear_map[shoe['id']] = shoe['name']
     return gear_map
 
+
+def fetch_athlete_profile(access_token):
+    """Fetch athlete profile — id, name, location, follower/following counts."""
+    url = "https://www.strava.com/api/v3/athlete"
+    response = requests.get(url, headers={'Authorization': f"Bearer {access_token}"})
+    if response.status_code != 200:
+        return {}
+    data = response.json()
+    return {
+        'id':             data.get('id'),
+        'firstname':      data.get('firstname', ''),
+        'lastname':       data.get('lastname', ''),
+        'city':           data.get('city', ''),
+        'state':          data.get('state', ''),
+        'follower_count': data.get('follower_count', 0),
+        'friend_count':   data.get('friend_count', 0),
+    }
+
+
+def fetch_athlete_stats(access_token, athlete_id):
+    """Fetch all-time, YTD, and recent totals from /athletes/{id}/stats."""
+    url = f"https://www.strava.com/api/v3/athletes/{athlete_id}/stats"
+    response = requests.get(url, headers={'Authorization': f"Bearer {access_token}"})
+    if response.status_code != 200:
+        return {}
+    return response.json()
+
 # --- ARCHIVE MAINTENANCE LOGIC ---
 
 def maintain_archive(access_token, archive_file, target_years):

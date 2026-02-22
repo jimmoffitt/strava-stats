@@ -39,8 +39,10 @@ GEAR_FALLBACKS = {
     'b11542587': 'Ferrazi Delano Peak Comp',
 }
 
-GEAR_MAP_FILE = os.path.join(DATA_DIR, 'gear_map.json')
-SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
+GEAR_MAP_FILE      = os.path.join(DATA_DIR, 'gear_map.json')
+SETTINGS_FILE      = os.path.join(DATA_DIR, 'settings.json')
+ATHLETE_PROFILE_FILE = os.path.join(DATA_DIR, 'athlete_profile.json')
+ATHLETE_STATS_FILE   = os.path.join(DATA_DIR, 'athlete_stats.json')
 
 # Defaults used when settings.json doesn't exist yet
 DEFAULT_SETTINGS = {
