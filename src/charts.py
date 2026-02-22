@@ -1,0 +1,144 @@
+# src/charts.py — Plotly figure factories for the Streamlit dashboard
+# Pure functions: no Streamlit calls, each returns go.Figure
+
+import plotly.graph_objects as go
+
+STRAVA_ORANGE = '#FC4C02'
+STRAVA_ORANGE_LIGHT = '#FCAB87'
+PRIOR_BLUE = 'rgba(70, 130, 200, 0.5)'
+SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
+
+
+def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year):
+    """
+    Bar chart of distance by year.
+    Current year bar uses light tint (YTD); prior years use Strava orange.
+    """
+    colors = [
+        STRAVA_ORANGE_LIGHT if int(row['year']) >= current_year else STRAVA_ORANGE
+        for _, row in yearly_df.iterrows()
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=yearly_df['year'].astype(str),
+        y=yearly_df[dist_col],
+        marker_color=colors,
+        text=[f"{v:,.0f}" for v in yearly_df[dist_col]],
+        textposition='outside',
+    ))
+
+    # Annotate the current-year bar with "YTD"
+    ytd_rows = yearly_df[yearly_df['year'] >= current_year]
+    for _, row in ytd_rows.iterrows():
+        fig.add_annotation(
+            x=str(int(row['year'])),
+            y=row[dist_col],
+            text="YTD",
+            showarrow=False,
+            yshift=28,
+            font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
+        )
+
+    fig.update_layout(
+        title=f"Annual Distance ({dist_label})",
+        xaxis_title="Year",
+        yaxis_title=dist_label,
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
+def make_year_time_chart(yearly_df, current_year):
+    """
+    Bar chart of riding hours by year.
+    Current year bar uses light tint (YTD); prior years use Strava orange.
+    """
+    colors = [
+        STRAVA_ORANGE_LIGHT if int(row['year']) >= current_year else STRAVA_ORANGE
+        for _, row in yearly_df.iterrows()
+    ]
+
+    fig = go.Figure(go.Bar(
+        x=yearly_df['year'].astype(str),
+        y=yearly_df['hours'],
+        marker_color=colors,
+        text=[f"{v:,.1f}" for v in yearly_df['hours']],
+        textposition='outside',
+    ))
+
+    ytd_rows = yearly_df[yearly_df['year'] >= current_year]
+    for _, row in ytd_rows.iterrows():
+        fig.add_annotation(
+            x=str(int(row['year'])),
+            y=row['hours'],
+            text="YTD",
+            showarrow=False,
+            yshift=28,
+            font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
+        )
+
+    fig.update_layout(
+        title="Annual Riding Hours",
+        xaxis_title="Year",
+        yaxis_title="Hours",
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
+def make_period_comparison_chart(
+    ref_df, prior_df, shadow_df,
+    x_col, x_label, dist_col, dist_label, title,
+):
+    """
+    Overlay bar chart comparing up to three periods.
+    - ref_df   : reference period (solid Strava orange)
+    - prior_df : same period prior year (blue, 50% opacity)
+    - shadow_df: current in-progress period (gray, 25% opacity); None to omit
+
+    All DataFrames must have columns: x_col, dist_col.
+    """
+    fig = go.Figure()
+
+    if shadow_df is not None and not shadow_df.empty:
+        fig.add_trace(go.Bar(
+            x=shadow_df[x_col],
+            y=shadow_df[dist_col],
+            name='Current (in progress)',
+            marker_color=SHADOW_GRAY,
+            marker_line_width=0,
+        ))
+
+    if prior_df is not None and not prior_df.empty:
+        fig.add_trace(go.Bar(
+            x=prior_df[x_col],
+            y=prior_df[dist_col],
+            name='Prior year',
+            marker_color=PRIOR_BLUE,
+        ))
+
+    if ref_df is not None and not ref_df.empty:
+        fig.add_trace(go.Bar(
+            x=ref_df[x_col],
+            y=ref_df[dist_col],
+            name='Selected period',
+            marker_color=STRAVA_ORANGE,
+        ))
+
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_label,
+        yaxis_title=dist_label,
+        barmode='overlay',
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
