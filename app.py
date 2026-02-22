@@ -11,8 +11,10 @@ import streamlit as st
 
 from src import config, process_data
 from src.charts import (
+    make_monthly_chart,
     make_period_comparison_chart,
     make_season_vert_chart,
+    make_sport_breakdown_chart,
     make_year_dist_chart,
     make_year_time_chart,
 )
@@ -68,6 +70,22 @@ def load_activities():
         return pd.DataFrame()
 
     return process_data.process_activities(all_activities)
+
+
+@st.cache_data
+def load_athlete_profile():
+    if os.path.exists(config.ATHLETE_PROFILE_FILE):
+        with open(config.ATHLETE_PROFILE_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data
+def load_athlete_stats():
+    if os.path.exists(config.ATHLETE_STATS_FILE):
+        with open(config.ATHLETE_STATS_FILE) as f:
+            return json.load(f)
+    return {}
 
 
 @st.cache_data
@@ -466,6 +484,113 @@ def render_ski_tab(ski_df, settings):
 
 
 # ---------------------------------------------------------------------------
+# Wrapped tab
+# ---------------------------------------------------------------------------
+def render_wrapped_tab(df, settings, athlete_profile):
+    # --- Year selector ---
+    available_years = sorted(df['year'].unique().tolist(), reverse=True)
+    today = date.today()
+    default_year = today.year - 1
+    default_idx = available_years.index(default_year) if default_year in available_years else 0
+    selected_year = st.selectbox("Year", available_years, index=default_idx, key="wrapped_year")
+
+    stats = process_data.compute_wrapped_stats(df, selected_year)
+    if not stats:
+        st.info("No data for the selected year.")
+        return
+
+    curr = stats['totals']
+    prev = stats['prior_totals']
+
+    def _delta(curr_val, prev_val):
+        if prev_val == 0:
+            return None
+        pct = (curr_val - prev_val) / prev_val * 100
+        return f"{pct:+.0f}% vs {selected_year - 1}"
+
+    # --- Headline name (if profile loaded) ---
+    if athlete_profile.get('firstname'):
+        name = athlete_profile['firstname']
+        loc = f" · {athlete_profile.get('city', '')}, {athlete_profile.get('state', '')}".rstrip(', ')
+        st.markdown(f"### {name}'s {selected_year}{loc}")
+    else:
+        st.markdown(f"### {selected_year} Year in Review")
+
+    # --- Headline stats ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Activities",    f"{curr['activities']:,}",      _delta(curr['activities'], prev['activities']))
+    c2.metric("Miles",         f"{curr['miles']:,.0f}",        _delta(curr['miles'],      prev['miles']))
+    c3.metric("Hours",         f"{curr['hours']:,.0f}",        _delta(curr['hours'],      prev['hours']))
+    c4.metric("Elevation (ft)",f"{curr['vert_ft']:,.0f}",      _delta(curr['vert_ft'],   prev['vert_ft']))
+
+    # Follower snapshot from profile
+    if athlete_profile.get('follower_count'):
+        f1, f2, f3 = st.columns([1, 1, 2])
+        f1.metric("Followers",  athlete_profile['follower_count'])
+        f2.metric("Following",  athlete_profile['friend_count'])
+
+    st.divider()
+
+    # --- Monthly + sport charts ---
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.plotly_chart(
+            make_monthly_chart(stats['monthly'], 'miles', 'Miles'),
+            use_container_width=True,
+        )
+    with col_r:
+        st.plotly_chart(
+            make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
+            use_container_width=True,
+        )
+
+    st.divider()
+
+    # --- Highlights ---
+    st.subheader("Highlights")
+    h1, h2, h3, h4 = st.columns(4)
+
+    bw = stats['biggest_week']
+    h1.metric("Biggest Week", f"{bw['miles']:,.0f} mi", bw['label'])
+
+    la = stats['longest_activity']
+    la_name = la['name'] if len(la['name']) <= 28 else la['name'][:25] + "..."
+    h2.metric("Longest Activity", f"{la['miles']:,.1f} mi", la_name)
+
+    bvd = stats['best_vert_day']
+    h3.metric("Most Vert in a Day", f"{bvd['vert_ft']:,.0f} ft", str(bvd['date']))
+
+    h4.metric("Longest Active Streak", f"{stats['longest_streak']} days")
+
+    st.divider()
+
+    # --- Social & Achievements ---
+    st.subheader("Social & Achievements")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Kudos Received",   f"{stats['kudos']['total']:,}")
+    s2.metric("Group Activities", f"{stats['group_rides']:,}")
+    s3.metric("Personal Records", f"{stats['achievements']['prs']:,}")
+    s4.metric("Achievements",     f"{stats['achievements']['total']:,}")
+
+    mk = stats['kudos']['most_kudoed']
+    if mk and mk['kudos'] > 0:
+        st.caption(f"Most kudoed: **{mk['name']}** — {mk['kudos']} kudos  ·  {mk['date']}")
+
+    st.divider()
+
+    # --- Fun Facts ---
+    st.subheader("Fun Facts")
+    ff = stats['fun_facts']
+    f1, f2, f3 = st.columns(3)
+    f1.metric("Everests Climbed",   f"{ff['everests']:.1f}",
+              f"{curr['vert_ft']:,.0f} ft total")
+    f2.metric("Around the Earth",   f"{ff['earth_pct']:.1f}%",
+              f"{curr['miles']:,.0f} miles")
+    f3.metric("Days in Motion",     f"{ff['days_moving']:.1f}",
+              f"{curr['hours']:,.0f} hours total")
+
+
+# ---------------------------------------------------------------------------
 # Settings tab
 # ---------------------------------------------------------------------------
 def render_settings_tab(settings):
@@ -576,6 +701,7 @@ st.title("Strava Stats")
 df = load_activities()
 gear_map = load_gear_map()
 settings = load_settings()
+athlete_profile = load_athlete_profile()
 
 if df.empty:
     st.error("No activity data found. Run the pipeline first.")
@@ -584,8 +710,8 @@ if df.empty:
 bike_df = df[df['final_type'].isin(BIKE_TYPES)].copy()
 ski_df = df[df['final_type'].isin(SKI_TYPES)].copy()
 
-tab_bike, tab_ski, tab_swim, tab_equity, tab_settings = st.tabs(
-    ["Bike", "Ski", "Swim", "Mile Equity", "Settings"]
+tab_bike, tab_ski, tab_swim, tab_equity, tab_wrapped, tab_settings = st.tabs(
+    ["Bike", "Ski", "Swim", "Mile Equity", "Wrapped", "Settings"]
 )
 
 with tab_bike:
@@ -599,6 +725,9 @@ with tab_swim:
 
 with tab_equity:
     st.info("Mile Equity tab — coming soon.")
+
+with tab_wrapped:
+    render_wrapped_tab(df, settings, athlete_profile)
 
 with tab_settings:
     render_settings_tab(settings)

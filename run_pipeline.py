@@ -11,12 +11,27 @@ def main():
     try:
         config.validate_config()
         token = fetch_data.get_access_token(config.TOKEN_FILE, config.CLIENT_ID, config.CLIENT_SECRET)
-        gear_map = fetch_data.fetch_active_gear(token)
-        # Merge fallbacks (historical retired gear) + live data; live data wins
+
+        # Athlete profile (id, name, followers) + gear
+        profile = fetch_data.fetch_athlete_profile(token)
+        with open(config.ATHLETE_PROFILE_FILE, 'w') as f:
+            json.dump(profile, f, indent=2)
+        print(f"Athlete profile written: {profile.get('firstname')} {profile.get('lastname')}")
+
+        gear_map = {k: v for k, v in {
+            **fetch_data.fetch_active_gear(token)
+        }.items()}
         merged_gear = {**config.GEAR_FALLBACKS, **gear_map}
         with open(config.GEAR_MAP_FILE, 'w') as f:
             json.dump(merged_gear, f, indent=2)
         print(f"Gear map written: {len(merged_gear)} bikes/shoes")
+
+        # Athlete all-time stats
+        if profile.get('id'):
+            athlete_stats = fetch_data.fetch_athlete_stats(token, profile['id'])
+            with open(config.ATHLETE_STATS_FILE, 'w') as f:
+                json.dump(athlete_stats, f, indent=2)
+            print("Athlete stats written.")
     except Exception as e:
         print(f"Setup failed: {e}")
         sys.exit(1)
