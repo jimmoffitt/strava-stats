@@ -31,7 +31,8 @@ STRAVA_YEARS = [int(y.strip()) for y in default_years.split(',') if y.strip().is
 
 # 5. Sport/Gear Constants
 BIKE_TYPES = ['Ride', 'VirtualRide', 'EBikeRide']
-SKI_TYPES = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
+SKI_TYPES  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
+SWIM_TYPES = ['Swim']
 
 # Historical gear that may be retired from Strava API but still in archive
 GEAR_FALLBACKS = {

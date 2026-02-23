@@ -144,8 +144,9 @@ def make_period_comparison_chart(
     return fig
 
 
-def make_monthly_chart(monthly_df, dist_col, dist_label):
-    """Bar chart of distance by month — 12 bars, 0-filled for empty months."""
+def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None):
+    """Bar chart of distance by month — 12 bars, 0-filled for empty months.
+    Optional dashed goal line."""
     fig = go.Figure(go.Bar(
         x=monthly_df['month_name'],
         y=monthly_df[dist_col],
@@ -153,6 +154,16 @@ def make_monthly_chart(monthly_df, dist_col, dist_label):
         text=[f"{v:,.0f}" if v > 0 else "" for v in monthly_df[dist_col]],
         textposition='outside',
     ))
+    if goal and goal > 0:
+        fig.add_hline(
+            y=goal,
+            line_dash='dash',
+            line_color='gray',
+            line_width=1.5,
+            annotation_text=f"Goal: {goal:,.0f}",
+            annotation_position='top right',
+            annotation_font_size=11,
+        )
     fig.update_layout(
         title=f"Distance by Month ({dist_label})",
         xaxis_title="Month",
@@ -184,6 +195,57 @@ def make_sport_breakdown_chart(sport_df, dist_col, dist_label):
         showlegend=False,
     )
     fig.update_xaxes(gridcolor='#eeeeee')
+    return fig
+
+
+SWIM_TEAL = '#00B4D8'
+SWIM_TEAL_LIGHT = '#90E0EF'
+
+
+def make_swim_year_chart(yearly_df, current_year, annual_goal=None):
+    """
+    Bar chart of total meters (or yards) per year.
+    Current year lighter; optional dashed annual-goal line.
+    """
+    colors = [
+        SWIM_TEAL_LIGHT if int(row['year']) >= current_year else SWIM_TEAL
+        for _, row in yearly_df.iterrows()
+    ]
+    y_col = yearly_df.columns[2]  # 'meters' or 'yards' — whichever caller passes
+
+    fig = go.Figure(go.Bar(
+        x=yearly_df['year'].astype(str),
+        y=yearly_df[y_col],
+        marker_color=colors,
+        text=[f"{v:,.0f}" for v in yearly_df[y_col]],
+        textposition='outside',
+    ))
+
+    ytd_rows = yearly_df[yearly_df['year'] >= current_year]
+    for _, row in ytd_rows.iterrows():
+        fig.add_annotation(
+            x=str(int(row['year'])), y=row[y_col],
+            text="YTD", showarrow=False, yshift=28,
+            font=dict(size=10, color=SWIM_TEAL_LIGHT),
+        )
+
+    if annual_goal and annual_goal > 0:
+        fig.add_hline(
+            y=annual_goal,
+            line_dash='dash', line_color='gray', line_width=1.5,
+            annotation_text=f"Annual goal: {annual_goal:,.0f}",
+            annotation_position='top right', annotation_font_size=11,
+        )
+
+    fig.update_layout(
+        title="Annual Distance",
+        xaxis_title="Year",
+        yaxis_title=y_col.capitalize(),
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
 
