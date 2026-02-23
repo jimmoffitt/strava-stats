@@ -586,3 +586,93 @@ def summarize_stats(df, gear_map=None):
     }
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Equity helpers
+# ---------------------------------------------------------------------------
+
+_EQ_PATTERN = r'^[A-Za-z\[]*[Ee][Qq](\s|\d|$)'
+
+
+def aggregate_equity_by_year(df, settings):
+    """
+    Equity miles per year from ACTUAL activities, broken down by bike / ski / swim.
+    Activities whose names match the *Eq pattern are excluded from bike miles
+    (they are the user's manual equity declarations, not actual bike rides).
+    """
+    import re
+    swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
+    ski_rate   = settings.get('conversions', {}).get('ski_vert_per_mile', 1000)
+    bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
+    ski_types  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
+    swim_types = ['Swim']
+
+    df = df.copy()
+    df['_is_eq'] = df['name'].str.match(_EQ_PATTERN, na=False)
+
+    rows = []
+    for year in sorted(df['year'].unique()):
+        y = df[df['year'] == year]
+        bike = y[y['final_type'].isin(bike_types) & ~y['_is_eq']]['distance_miles'].sum()
+        ski  = y[y['final_type'].isin(ski_types)]['elevation_feet'].sum() / ski_rate
+        swim = y[y['final_type'].isin(swim_types)]['distance'].sum() / swim_rate
+        rows.append({'year': year, 'bike': bike, 'ski': ski, 'swim': swim,
+                     'total': bike + ski + swim})
+    return pd.DataFrame(rows)
+
+
+def aggregate_equity_by_month(df, year, settings):
+    """
+    Equity miles per month (12 rows, 0-filled) for the given year.
+    Eq-named activities are excluded from bike; ski/swim computed from actual activities.
+    """
+    import calendar as cal
+    swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
+    ski_rate   = settings.get('conversions', {}).get('ski_vert_per_mile', 1000)
+    bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
+    ski_types  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
+    swim_types = ['Swim']
+
+    y_df = df[df['year'] == year].copy()
+    y_df['_is_eq'] = y_df['name'].str.match(_EQ_PATTERN, na=False)
+    y_df['month'] = y_df['start_date_local'].dt.month
+
+    rows = []
+    for m in range(1, 13):
+        mo = y_df[y_df['month'] == m]
+        bike = mo[mo['final_type'].isin(bike_types) & ~mo['_is_eq']]['distance_miles'].sum()
+        ski  = mo[mo['final_type'].isin(ski_types)]['elevation_feet'].sum() / ski_rate
+        swim = mo[mo['final_type'].isin(swim_types)]['distance'].sum() / swim_rate
+        rows.append({
+            'month': m,
+            'month_name': cal.month_abbr[m],
+            'bike': bike, 'ski': ski, 'swim': swim,
+            'total': bike + ski + swim,
+        })
+    return pd.DataFrame(rows)
+
+
+def get_eq_activities(df):
+    """
+    Returns all activities whose names match the *Eq pattern, sorted by date descending.
+    Columns: date, name, final_type, eq_prefix, miles, year, month.
+    """
+    import re
+    eq_df = df[df['name'].str.match(_EQ_PATTERN, na=False)].copy()
+    if eq_df.empty:
+        return eq_df
+
+    def _prefix(name):
+        m = re.match(r'^([A-Za-z\[]*)[Ee][Qq]', str(name))
+        return m.group(1).upper() if m else ''
+
+    eq_df['eq_prefix'] = eq_df['name'].apply(_prefix)
+    eq_df['date']  = eq_df['start_date_local'].dt.date
+    eq_df['month'] = eq_df['start_date_local'].dt.month
+    return (
+        eq_df[['date', 'name', 'final_type', 'eq_prefix', 'distance_miles', 'year', 'month']]
+        .rename(columns={'distance_miles': 'miles'})
+        .sort_values('date', ascending=False)
+        .reset_index(drop=True)
+    )

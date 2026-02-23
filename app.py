@@ -11,6 +11,8 @@ import streamlit as st
 
 from src import config, process_data
 from src.charts import (
+    make_equity_annual_chart,
+    make_equity_monthly_chart,
     make_monthly_chart,
     make_period_comparison_chart,
     make_season_vert_chart,
@@ -593,6 +595,119 @@ def render_swim_tab(swim_df, settings):
 
 
 # ---------------------------------------------------------------------------
+# Mile Equity tab
+# ---------------------------------------------------------------------------
+def render_equity_tab(df, settings):
+    convs         = settings.get('conversions', {})
+    goals         = settings.get('goals', {})
+    swim_rate     = convs.get('swim_meters_per_mile', 100)
+    ski_rate      = convs.get('ski_vert_per_mile', 1000)
+    annual_goal   = goals.get('annual_equity_miles', 0)
+    monthly_goal  = goals.get('monthly_equity_miles', 0)
+
+    available_years = sorted(df['year'].unique().tolist(), reverse=True)
+    today = date.today()
+    # Default to the most recently completed year (prior year)
+    default_year = today.year - 1
+    default_idx = available_years.index(default_year) if default_year in available_years else 0
+    selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year")
+
+    current_year = today.year
+    yearly  = process_data.aggregate_equity_by_year(df, settings)
+    monthly = process_data.aggregate_equity_by_month(df, selected_year, settings)
+
+    # --- Charts ---
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.plotly_chart(
+            make_equity_annual_chart(yearly, current_year),
+            use_container_width=True,
+        )
+    with col_r:
+        st.plotly_chart(
+            make_equity_monthly_chart(monthly, goal=monthly_goal),
+            use_container_width=True,
+        )
+
+    st.divider()
+
+    # --- Selected year metrics ---
+    yr_row = yearly[yearly['year'] == selected_year]
+    if yr_row.empty:
+        st.info("No data for the selected year.")
+        return
+
+    bike_eq  = yr_row['bike'].values[0]
+    ski_eq   = yr_row['ski'].values[0]
+    swim_eq  = yr_row['swim'].values[0]
+    total_eq = yr_row['total'].values[0]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Equity Miles", f"{total_eq:,.0f}")
+    pct_str = lambda v: f"{v / total_eq * 100:.0f}% of total" if total_eq else None
+    c2.metric("Bike",  f"{bike_eq:,.0f} mi",  pct_str(bike_eq),  delta_color="off")
+    c3.metric("Ski",   f"{ski_eq:,.0f} mi",   pct_str(ski_eq),   delta_color="off")
+    c4.metric("Swim",  f"{swim_eq:,.0f} mi",  pct_str(swim_eq),  delta_color="off")
+
+    if annual_goal:
+        pct = min(total_eq / annual_goal, 1.0)
+        st.caption(f"Annual goal: {total_eq:,.0f} / {annual_goal:,} equity miles ({pct * 100:.0f}%)")
+        st.progress(pct)
+
+    st.caption(
+        f"Conversion rates — Bike: 1 mi = 1 equity mi  ·  "
+        f"Swim: {swim_rate:,.0f} m = 1 equity mi  ·  "
+        f"Ski: {ski_rate:,.0f} vert ft = 1 equity mi"
+    )
+
+    st.divider()
+
+    # --- Manual Eq activities table ---
+    st.subheader("Manual Eq Activities")
+    st.caption(
+        "Activities whose names include an Eq marker (e.g. SEq, HEq, GEq) are the user's "
+        "manual equity declarations. They are listed here for review but excluded from the "
+        "calculated equity above to avoid double-counting with actual activity data."
+    )
+
+    eq_df = process_data.get_eq_activities(df)
+    if eq_df.empty:
+        st.info("No Eq activities found.")
+        return
+
+    # Filter to selected year
+    year_options = ["All years"] + [str(y) for y in sorted(eq_df['year'].unique(), reverse=True)]
+    eq_year_sel = st.selectbox("Filter by year", year_options, key="eq_year_filter")
+    if eq_year_sel != "All years":
+        show_eq = eq_df[eq_df['year'] == int(eq_year_sel)].copy()
+    else:
+        show_eq = eq_df.copy()
+
+    # Summary counts by prefix
+    summary_cols = st.columns(4)
+    prefix_counts = show_eq.groupby('eq_prefix')['miles'].agg(['count', 'sum'])
+    for i, (prefix, row) in enumerate(prefix_counts.iterrows()):
+        summary_cols[i % 4].metric(
+            f"{prefix}Eq" if prefix else "Eq",
+            f"{row['count']:.0f} activities",
+            f"{row['sum']:,.0f} mi",
+            delta_color="off",
+        )
+
+    display = show_eq.copy()
+    display['Date']     = pd.to_datetime(display['date']).dt.strftime('%-m/%-d/%Y')
+    display['Activity'] = display['name']
+    display['Type']     = display['final_type']
+    display['Prefix']   = display['eq_prefix'].apply(lambda p: f"{p}Eq" if p else "Eq")
+    display['Miles']    = display['miles'].apply(lambda v: f"{v:,.1f}")
+    st.dataframe(
+        display[['Date', 'Activity', 'Type', 'Prefix', 'Miles']],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Wrapped tab
 # ---------------------------------------------------------------------------
 def render_wrapped_tab(df, settings, athlete_profile):
@@ -834,7 +949,7 @@ with tab_swim:
     render_swim_tab(swim_df, settings)
 
 with tab_equity:
-    st.info("Mile Equity tab — coming soon.")
+    render_equity_tab(df, settings)
 
 with tab_wrapped:
     render_wrapped_tab(df, settings, athlete_profile)
