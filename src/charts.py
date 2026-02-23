@@ -304,3 +304,105 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
     )
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
+
+
+def make_equity_annual_chart(equity_df, current_year):
+    """
+    Stacked bar chart of equity miles per year broken down by bike / ski / swim.
+    Total label annotated above each bar; current year marked YTD.
+    """
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=equity_df['year'].astype(str),
+        y=equity_df['bike'],
+        name='Bike',
+        marker_color=STRAVA_ORANGE,
+    ))
+    fig.add_trace(go.Bar(
+        x=equity_df['year'].astype(str),
+        y=equity_df['ski'],
+        name='Ski',
+        marker_color=SKI_BLUE,
+    ))
+    fig.add_trace(go.Bar(
+        x=equity_df['year'].astype(str),
+        y=equity_df['swim'],
+        name='Swim',
+        marker_color=SWIM_TEAL,
+    ))
+
+    for _, row in equity_df.iterrows():
+        if row['total'] > 0:
+            fig.add_annotation(
+                x=str(int(row['year'])), y=row['total'],
+                text=f"{row['total']:,.0f}",
+                showarrow=False, yshift=8, font=dict(size=10),
+            )
+
+    ytd_rows = equity_df[equity_df['year'] >= current_year]
+    for _, row in ytd_rows.iterrows():
+        fig.add_annotation(
+            x=str(int(row['year'])), y=row['total'],
+            text="YTD", showarrow=False, yshift=22,
+            font=dict(size=9, color='#999999'),
+        )
+
+    fig.update_layout(
+        title="Annual Equity Miles",
+        xaxis_title="Year",
+        yaxis_title="Equity Miles",
+        barmode='stack',
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
+def make_equity_monthly_chart(monthly_df, goal=None):
+    """
+    Stacked bar chart of equity miles per month for a single year.
+    Optional dashed monthly goal line.
+    """
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=monthly_df['month_name'],
+        y=monthly_df['bike'],
+        name='Bike',
+        marker_color=STRAVA_ORANGE,
+    ))
+    fig.add_trace(go.Bar(
+        x=monthly_df['month_name'],
+        y=monthly_df['ski'],
+        name='Ski',
+        marker_color=SKI_BLUE,
+    ))
+    fig.add_trace(go.Bar(
+        x=monthly_df['month_name'],
+        y=monthly_df['swim'],
+        name='Swim',
+        marker_color=SWIM_TEAL,
+    ))
+
+    if goal and goal > 0:
+        fig.add_hline(
+            y=goal,
+            line_dash='dash', line_color='gray', line_width=1.5,
+            annotation_text=f"Goal: {goal:,.0f}",
+            annotation_position='top right', annotation_font_size=11,
+        )
+
+    fig.update_layout(
+        title="Monthly Equity Miles",
+        xaxis_title="Month",
+        yaxis_title="Equity Miles",
+        barmode='stack',
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
