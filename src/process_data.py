@@ -303,6 +303,90 @@ def compute_wrapped_stats(df, year):
     }
 
 
+def aggregate_swim_by_year(swim_df):
+    """Returns DataFrame[year, swims, meters, yards, hours, avg_meters] sorted ascending."""
+    swim_df = swim_df.copy()
+    swim_df['hours'] = swim_df['moving_time'] / 3600.0
+    agg = (
+        swim_df.groupby('year')
+        .agg(
+            swims=('id', 'count'),
+            meters=('distance', 'sum'),
+            hours=('hours', 'sum'),
+        )
+        .reset_index()
+        .sort_values('year')
+    )
+    agg['yards']      = agg['meters'] * 1.09361
+    agg['avg_meters'] = agg['meters'] / agg['swims']
+    return agg
+
+
+def aggregate_swim_by_month(swim_df, year):
+    """
+    Returns DataFrame with one row per month (1–12) for the given year.
+    Columns: month, month_name, swims, meters, yards, hours.
+    Missing months filled with 0.
+    """
+    import calendar as cal
+    swim_df = swim_df.copy()
+    swim_df['hours'] = swim_df['moving_time'] / 3600.0
+    swim_df['month'] = swim_df['start_date_local'].dt.month
+
+    mask = swim_df['start_date_local'].dt.year == year
+    agg = (
+        swim_df[mask].groupby('month')
+        .agg(
+            swims=('id', 'count'),
+            meters=('distance', 'sum'),
+            hours=('hours', 'sum'),
+        )
+        .reset_index()
+    )
+    all_months = pd.DataFrame({
+        'month':      range(1, 13),
+        'month_name': [cal.month_abbr[m] for m in range(1, 13)],
+    })
+    result = all_months.merge(agg, on='month', how='left').fillna(0)
+    result['month'] = result['month'].astype(int)
+    result['yards'] = result['meters'] * 1.09361
+    return result
+
+
+def get_swim_log(swim_df, year):
+    """
+    Returns a DataFrame of individual swims for the given year, sorted newest first.
+    Includes pace in seconds per 100m (and per 100yd).
+    """
+    swim_df = swim_df.copy()
+    year_df = swim_df[swim_df['year'] == year].copy()
+    if year_df.empty:
+        return pd.DataFrame()
+
+    year_df['yards'] = year_df['distance'] * 1.09361
+    year_df['hours'] = year_df['moving_time'] / 3600.0
+
+    def _pace_sec(row):
+        spd = row.get('average_speed', 0)
+        if spd and spd > 0:
+            return 100.0 / spd      # seconds per 100m
+        elif row['distance'] > 0 and row['moving_time'] > 0:
+            return (row['moving_time'] / row['distance']) * 100
+        return None
+
+    year_df['pace_per_100m'] = year_df.apply(_pace_sec, axis=1)
+    year_df['pace_per_100yd'] = year_df['pace_per_100m'].apply(
+        lambda p: p * 0.9144 if p else None  # 100m pace × 0.9144 = 100yd pace
+    )
+    year_df = year_df.rename(columns={'distance': 'meters'})
+    return (
+        year_df[['start_date_local', 'name', 'meters', 'yards',
+                  'moving_time', 'hours', 'pace_per_100m', 'pace_per_100yd']]
+        .sort_values('start_date_local', ascending=False)
+        .reset_index(drop=True)
+    )
+
+
 def _ski_season_key(dt):
     """Returns the start year of the ski season for a datetime. Oct-Dec → same year; Jan-Sep → prior year."""
     return dt.year if dt.month >= 10 else dt.year - 1
