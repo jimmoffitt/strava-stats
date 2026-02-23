@@ -46,7 +46,7 @@ streamlit run app.py
 
 ## Dashboard
 
-The interactive dashboard is organized into tabs. The Bike tab is fully implemented; Ski, Swim, Mile Equity, and Settings are in progress.
+The interactive dashboard is organized into tabs: Bike, Ski, Swim, Mile Equity, Wrapped, and Settings.
 
 ### Bike — Year view
 Annual distance and riding hours, 2018–present. Current year shown in lighter orange (YTD).
@@ -79,6 +79,51 @@ Normalizes cross-sport effort to a common "bike mile" unit:
 | Ski  | 1,000 vertical feet = 1 equity mile |
 
 Conversion rates and goals are configurable in the Settings tab and persisted to `data/settings.json`.
+
+## Data storage and persistence
+
+All data lives in the `data/` directory and persists between sessions. Nothing is sent to a remote server — everything stays local.
+
+### Activity archive
+
+The primary data store is `data/raw/my_strava_activities.json`, a flat JSON array of every activity ever synced. It grows incrementally:
+
+- **Past years** — fetched once and never re-fetched. If 2023 is already in the archive, the pipeline skips it entirely.
+- **Current year** — checked on every pipeline run. Only activities newer than the most recent archived timestamp are fetched and appended.
+
+The archive is not committed to git (listed in `.gitignore`). The dashboard reads it directly on startup via `app.py`'s cached `load_activities()`.
+
+### Supporting JSON files
+
+| File | Written by | Contains |
+|---|---|---|
+| `data/raw/my_strava_activities.json` | `run_pipeline.py` | Full activity archive |
+| `data/gear_map.json` | `run_pipeline.py` | Bike/shoe ID → name mapping |
+| `data/athlete_profile.json` | `run_pipeline.py` | Name, location, follower count |
+| `data/athlete_stats.json` | `run_pipeline.py` | All-time and YTD Strava totals |
+| `data/settings.json` | Settings tab in app | Goals and equity conversion rates |
+
+`settings.json` is written by the Streamlit app when you save changes in the Settings tab, not by the pipeline. All other files require running `python run_pipeline.py`.
+
+### How the dashboard loads data
+
+On startup, `app.py` calls `load_activities()` (decorated with `@st.cache_data`):
+
+1. Reads `data/raw/my_strava_activities.json` as the base archive.
+2. Scans `data/raw/` for any per-year files (e.g. `2026.json`) whose year is **not** already in the archive, and merges them in. This handles partially-synced years before the pipeline runs.
+3. Processes the merged list into a pandas DataFrame via `process_data.process_activities()`.
+
+The result is cached for the lifetime of the Streamlit session, so navigating between tabs does not re-read or re-process the files.
+
+### Keeping data current
+
+Run the pipeline whenever you want to pull in new activities:
+
+```bash
+python run_pipeline.py
+```
+
+Then reload the dashboard (`r` in the browser or restart `streamlit run app.py`) to pick up the updated archive.
 
 ## Strava activity data
 
