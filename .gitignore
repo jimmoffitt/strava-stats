@@ -13,6 +13,11 @@ data/processed/
 data/last_data.json
 data/my_strava_history.json
 
+# Pipeline outputs — personal and regenerable from the Strava API
+data/gear_map.json
+data/athlete_profile.json
+data/athlete_stats.json
+
 # User settings — personal preferences, not shared
 data/settings.json
 
