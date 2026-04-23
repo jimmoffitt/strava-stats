@@ -105,6 +105,60 @@ The archive is not committed to git (listed in `.gitignore`). The dashboard read
 
 `settings.json` is written by the Streamlit app when you save changes in the Settings tab, not by the pipeline. All other files require running `python run_pipeline.py`.
 
+None of these files are committed to git — they're personal data and are regenerable from the Strava API.
+
+#### `data/strava_tokens.json`
+
+Written on first auth and updated automatically on each token refresh. Never commit this file — it contains your OAuth credentials.
+
+To obtain it, complete the Strava OAuth flow once manually (see [Strava API Getting Started](https://developers.strava.com/docs/getting-started/)). The file structure is:
+
+```json
+{
+    "access_token": "your_access_token_here",
+    "refresh_token": "your_refresh_token_here",
+    "expires_at": 1234567890,
+    "token_type": "Bearer"
+}
+```
+
+The pipeline refreshes the access token automatically when it expires (every 6 hours). The refresh token is long-lived and only changes if you revoke and re-authorize the app.
+
+#### `data/settings.json`
+
+Created automatically with defaults on first run. Edit via the Settings tab in the dashboard, or create it manually:
+
+```json
+{
+  "conversions": {
+    "swim_meters_per_mile": 100,
+    "ski_vert_per_mile": 1000
+  },
+  "goals": {
+    "annual_equity_miles": 2400,
+    "monthly_equity_miles": 200,
+    "ski_season_vert_ft": 200000,
+    "swim_monthly_meters": 15000
+  }
+}
+```
+
+#### `data/last_data.json`
+
+Written by the pipeline after each successful fetch. Tracks the last sync timestamp so incremental fetches only pull new activities:
+
+```json
+{
+    "last_timestamp": 1767825910.0,
+    "last_check": "2026-01-09T13:14:45.227794",
+    "activity_count_latest_fetch": 326
+}
+```
+
+#### `data/raw/YYYY.json`
+
+Per-year activity files (e.g. `2025.json`, `2026.json`) are the same format as the main archive — a flat JSON array of Strava activity objects. The dashboard auto-merges any year files it finds that aren't already in the main archive, so you can drop a year file in `data/raw/` and it will be picked up on the next dashboard reload.
+
 ### How the dashboard loads data
 
 On startup, `app.py` calls `load_activities()` (decorated with `@st.cache_data`):

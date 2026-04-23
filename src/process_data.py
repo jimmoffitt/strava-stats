@@ -653,6 +653,86 @@ def aggregate_equity_by_month(df, year, settings):
     return pd.DataFrame(rows)
 
 
+def aggregate_recent_months_by_sport(df, sport, n_months):
+    """
+    Returns a DataFrame comparing this year vs last year for the last n_months
+    calendar months (ending with the current month).
+
+    Columns: calendar_year, month_num, month_abbr, month_label,
+             this_year_val, last_year_val, is_current.
+
+    sport: 'bike' | 'bike_equity' | 'swim' | 'ski'
+    Units: bike/bike_equity → miles, swim → meters, ski → vertical feet.
+    """
+    import calendar as cal
+    from datetime import date as _date
+
+    today = _date.today()
+
+    # Build month window oldest→newest
+    months = []
+    y, m = today.year, today.month
+    for _ in range(n_months):
+        months.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    months.reverse()
+
+    bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
+    ski_types  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
+    swim_types = ['Swim']
+
+    df = df.copy()
+    df['_m'] = df['start_date_local'].dt.month
+    df['_y'] = df['start_date_local'].dt.year
+
+    if sport == 'bike_equity':
+        df['_is_eq'] = df['name'].str.match(_EQ_PATTERN, na=False)
+        sport_df  = df[df['final_type'].isin(bike_types) & ~df['_is_eq']]
+        value_col = 'distance_miles'
+    elif sport == 'bike':
+        sport_df  = df[df['final_type'].isin(bike_types)]
+        value_col = 'distance_miles'
+    elif sport == 'swim':
+        sport_df  = df[df['final_type'].isin(swim_types)]
+        value_col = 'distance'
+    elif sport == 'ski':
+        sport_df  = df[df['final_type'].isin(ski_types)]
+        value_col = 'elevation_feet'
+    else:
+        return pd.DataFrame()
+
+    def _total(year, month):
+        mask = (sport_df['_y'] == year) & (sport_df['_m'] == month)
+        return float(sport_df.loc[mask, value_col].sum())
+
+    rows = []
+    years_seen = set()
+    for (y, m) in months:
+        years_seen.add(y)
+        rows.append({
+            'calendar_year': y,
+            'month_num':     m,
+            'month_abbr':    cal.month_abbr[m],
+            'this_year_val': _total(y, m),
+            'last_year_val': _total(y - 1, m),
+            'is_current':    (y == today.year and m == today.month),
+        })
+
+    result = pd.DataFrame(rows)
+    # Include year suffix in label only when the window spans two calendar years
+    if len(years_seen) > 1:
+        result['month_label'] = result.apply(
+            lambda r: f"{r['month_abbr']} '{str(r['calendar_year'])[-2:]}", axis=1
+        )
+    else:
+        result['month_label'] = result['month_abbr']
+
+    return result
+
+
 def get_eq_activities(df):
     """
     Returns all activities whose names match the *Eq pattern, sorted by date descending.

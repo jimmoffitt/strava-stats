@@ -7,14 +7,24 @@ venv/
 # OAuth tokens — never commit
 data/strava_tokens.json
 
+# Activity data — personal, large, and regenerable from the Strava API
+data/raw/
+data/processed/
+data/last_data.json
+data/my_strava_history.json
+
+# User settings — personal preferences, not shared
+data/settings.json
+
+# Generated images — regenerable by running the pipeline
+# Specific PNGs used in README documentation are tracked via explicit git add
+data/images/*.png
+!data/images/2_sport_stats.png
+!data/images/3_bike_stats.png
+!data/images/4_annual_stats.png
+
 # IDE
 .vscode/
-
-# Data. No need to store archive or tokens.
-#data/
-
-# Output. 
-#output/
 
 # Prototypes.
 prototypes/
