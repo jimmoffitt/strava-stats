@@ -15,6 +15,7 @@ from src.charts import (
     make_equity_monthly_chart,
     make_monthly_chart,
     make_period_comparison_chart,
+    make_recent_months_chart,
     make_season_vert_chart,
     make_sport_breakdown_chart,
     make_swim_year_chart,
@@ -815,6 +816,78 @@ def render_wrapped_tab(df, settings, athlete_profile):
 
 
 # ---------------------------------------------------------------------------
+# Trends tab
+# ---------------------------------------------------------------------------
+def render_trends_tab(df):
+    today = date.today()
+    this_year = today.year
+    last_year = this_year - 1
+
+    sport_configs = {
+        "Bike":        ("bike",        "Miles"),
+        "Bike Equity": ("bike_equity", "Equity Miles"),
+        "Swim":        ("swim",        "Meters"),
+        "Ski":         ("ski",         "Vertical Feet"),
+    }
+
+    ctrl_l, ctrl_r = st.columns([3, 1])
+    with ctrl_l:
+        sport_label = st.radio(
+            "Sport", list(sport_configs.keys()),
+            horizontal=True, key="trends_sport",
+        )
+    with ctrl_r:
+        n_months = st.slider(
+            "Months", min_value=2, max_value=12, value=3,
+            key="trends_n_months",
+        )
+
+    sport_key, unit_label = sport_configs[sport_label]
+
+    months_df = process_data.aggregate_recent_months_by_sport(df, sport_key, n_months)
+    if months_df.empty:
+        st.info("No data found for the selected sport.")
+        return
+
+    max_year = int(months_df['calendar_year'].max())
+
+    st.plotly_chart(
+        make_recent_months_chart(months_df, max_year, max_year - 1, unit_label),
+        use_container_width=True,
+    )
+
+    st.divider()
+
+    # Highlight cards: last complete month + current month YTD
+    complete_rows = months_df[~months_df['is_current']]
+    current_rows  = months_df[months_df['is_current']]
+
+    def _metric_card(col, label, row, unit_label, cmp_year):
+        val  = row['this_year_val']
+        prev = row['last_year_val']
+        delta = val - prev
+        pct   = (delta / prev * 100) if prev > 0 else None
+        delta_str = f"{pct:+.0f}% vs {cmp_year}" if pct is not None else None
+        col.metric(label, f"{val:,.0f} {unit_label}", delta_str)
+
+    metric_cols = st.columns(2)
+    if not complete_rows.empty:
+        last = complete_rows.iloc[-1]
+        _metric_card(
+            metric_cols[0],
+            f"{last['month_label']} {max_year}",
+            last, unit_label, max_year - 1,
+        )
+    if not current_rows.empty:
+        cur = current_rows.iloc[0]
+        _metric_card(
+            metric_cols[1],
+            f"{cur['month_label']} {max_year} (YTD)",
+            cur, unit_label, max_year - 1,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Settings tab
 # ---------------------------------------------------------------------------
 def render_settings_tab(settings):
@@ -935,8 +1008,8 @@ bike_df = df[df['final_type'].isin(BIKE_TYPES)].copy()
 ski_df  = df[df['final_type'].isin(SKI_TYPES)].copy()
 swim_df = df[df['final_type'].isin(SWIM_TYPES)].copy()
 
-tab_bike, tab_ski, tab_swim, tab_equity, tab_wrapped, tab_settings = st.tabs(
-    ["Bike", "Ski", "Swim", "Mile Equity", "Wrapped", "Settings"]
+tab_bike, tab_ski, tab_swim, tab_trends, tab_equity, tab_wrapped, tab_settings = st.tabs(
+    ["Bike", "Ski", "Swim", "Trends", "Mile Equity", "Wrapped", "Settings"]
 )
 
 with tab_bike:
@@ -947,6 +1020,9 @@ with tab_ski:
 
 with tab_swim:
     render_swim_tab(swim_df, settings)
+
+with tab_trends:
+    render_trends_tab(df)
 
 with tab_equity:
     render_equity_tab(df, settings)

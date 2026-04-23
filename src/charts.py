@@ -361,6 +361,46 @@ def make_equity_annual_chart(equity_df, current_year):
     return fig
 
 
+def make_recent_months_chart(months_df, this_year, last_year, unit_label):
+    """
+    Grouped bar chart: this year (orange) vs last year (blue) for recent months.
+    months_df columns: month_label, this_year_val, last_year_val, is_current.
+    Current in-progress month is shown in the lighter orange tint.
+    """
+    this_year_colors = [
+        STRAVA_ORANGE_LIGHT if row['is_current'] else STRAVA_ORANGE
+        for _, row in months_df.iterrows()
+    ]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=months_df['month_label'],
+        y=months_df['last_year_val'],
+        name=str(last_year),
+        marker_color=PRIOR_BLUE,
+    ))
+
+    fig.add_trace(go.Bar(
+        x=months_df['month_label'],
+        y=months_df['this_year_val'],
+        name=str(this_year),
+        marker_color=this_year_colors,
+    ))
+
+    fig.update_layout(
+        title=f"Monthly {unit_label} — {this_year} vs {last_year}",
+        xaxis_title="Month",
+        yaxis_title=unit_label,
+        barmode='group',
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
 def make_equity_monthly_chart(monthly_df, goal=None):
     """
     Stacked bar chart of equity miles per month for a single year.
