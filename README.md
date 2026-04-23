@@ -46,7 +46,7 @@ streamlit run app.py
 
 ## Dashboard
 
-The interactive dashboard is organized into tabs: Bike, Ski, Swim, Mile Equity, Wrapped, and Settings.
+The interactive dashboard is organized into tabs: Bike, Ski, Swim, Trends, Mile Equity, Wrapped, and Settings.
 
 ### Bike — Year view
 Annual distance and riding hours, 2018–present. Current year shown in lighter orange (YTD).
@@ -62,6 +62,9 @@ Day-by-day comparison: selected month (orange) vs. prior year same month (blue) 
 ISO week navigator with the same three-period overlay.
 
 ![Bike week view](docs/screenshots/bike_week.png)
+
+### Trends
+Monthly year-over-year comparison across all sports. Select Bike, Bike Equity, Swim, or Ski; adjust the window from 2 to 12 months. The current in-progress month is shown in lighter orange. Metric cards below the chart highlight the last complete month and current month YTD, each with a ±% delta vs. the prior year.
 
 ### Settings
 Equity mile conversion rates (swim meters and ski vertical feet per mile) and annual/monthly/seasonal goals.
