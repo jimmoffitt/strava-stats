@@ -610,10 +610,9 @@ _EQ_PATTERN = r'^[A-Za-z\[]*[Ee][Qq](\s|\d|$)'
 def aggregate_equity_by_year(df, settings):
     """
     Equity miles per year from ACTUAL activities, broken down by bike / ski / swim.
-    Activities whose names match the *Eq pattern are excluded from bike miles
-    (they are the user's manual equity declarations, not actual bike rides).
+    Activities whose names match the *Eq pattern are excluded from all sports —
+    they are the user's manual equity declarations, not actual recorded activities.
     """
-    import re
     swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
     ski_rate   = settings.get('conversions', {}).get('ski_vert_per_mile', 1000)
     bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
@@ -627,8 +626,8 @@ def aggregate_equity_by_year(df, settings):
     for year in sorted(df['year'].unique()):
         y = df[df['year'] == year]
         bike = y[y['final_type'].isin(bike_types) & ~y['_is_eq']]['distance_miles'].sum()
-        ski  = y[y['final_type'].isin(ski_types)]['elevation_feet'].sum() / ski_rate
-        swim = y[y['final_type'].isin(swim_types)]['distance'].sum() / swim_rate
+        ski  = y[y['final_type'].isin(ski_types)  & ~y['_is_eq']]['elevation_feet'].sum() / ski_rate
+        swim = y[y['final_type'].isin(swim_types) & ~y['_is_eq']]['distance'].sum() / swim_rate
         rows.append({'year': year, 'bike': bike, 'ski': ski, 'swim': swim,
                      'total': bike + ski + swim})
     return pd.DataFrame(rows)
@@ -637,7 +636,7 @@ def aggregate_equity_by_year(df, settings):
 def aggregate_equity_by_month(df, year, settings):
     """
     Equity miles per month (12 rows, 0-filled) for the given year.
-    Eq-named activities are excluded from bike; ski/swim computed from actual activities.
+    Eq-named activities are excluded from all sports — they are manual declarations.
     """
     import calendar as cal
     swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
@@ -654,8 +653,8 @@ def aggregate_equity_by_month(df, year, settings):
     for m in range(1, 13):
         mo = y_df[y_df['month'] == m]
         bike = mo[mo['final_type'].isin(bike_types) & ~mo['_is_eq']]['distance_miles'].sum()
-        ski  = mo[mo['final_type'].isin(ski_types)]['elevation_feet'].sum() / ski_rate
-        swim = mo[mo['final_type'].isin(swim_types)]['distance'].sum() / swim_rate
+        ski  = mo[mo['final_type'].isin(ski_types)  & ~mo['_is_eq']]['elevation_feet'].sum() / ski_rate
+        swim = mo[mo['final_type'].isin(swim_types) & ~mo['_is_eq']]['distance'].sum() / swim_rate
         rows.append({
             'month': m,
             'month_name': cal.month_abbr[m],
