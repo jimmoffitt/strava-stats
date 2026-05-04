@@ -39,18 +39,25 @@ def process_activities(activities_list):
 
 def _determine_activity_type(row):
     """
-    Internal helper to handle SBEq, HEq, GEq logic.
+    Internal helper to handle SBEq, HEq, GEq, SEq logic.
     """
     name = str(row.get('name', '')).upper()
     strava_type = row.get('type', 'Unknown')
-    
-    # Logic: SBEq (Stationary Bike) -> Treat as simple bike miles
+
     if 'SBEQ' in name: return 'Ride'
-    # Logic: HEq -> Hiking
     if 'HEQ' in name: return 'Hiking'
-    # Logic: GEq -> Gardening
     if 'GEQ' in name: return 'Gardening'
-    
+
+    if 'SEQ' in name:
+        # SEq has been used for both swimming and skiing activities.
+        # Date rule: May 7 – Oct 31 → Swim; Nov 1 – May 6 → AlpineSki.
+        dt = row.get('start_date_local')
+        if dt is not None:
+            ts = pd.Timestamp(dt)
+            if (ts.month, ts.day) >= (5, 7) and (ts.month, ts.day) < (11, 1):
+                return 'Swim'
+            return 'AlpineSki'
+
     return strava_type
 
 def aggregate_by_year(bike_df):
