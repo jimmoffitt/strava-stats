@@ -41,6 +41,7 @@ GEAR_FALLBACKS = {
 }
 
 GEAR_MAP_FILE      = os.path.join(DATA_DIR, 'gear_map.json')
+LAST_DATA_FILE     = os.path.join(DATA_DIR, 'last_data.json')
 SETTINGS_FILE      = os.path.join(DATA_DIR, 'settings.json')
 ATHLETE_PROFILE_FILE = os.path.join(DATA_DIR, 'athlete_profile.json')
 ATHLETE_STATS_FILE   = os.path.join(DATA_DIR, 'athlete_stats.json')
