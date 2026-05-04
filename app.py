@@ -1637,9 +1637,13 @@ if df.empty:
     st.error("No activity data found. Run the pipeline first.")
     st.stop()
 
-bike_df = df[df['final_type'].isin(BIKE_TYPES)].copy()
-ski_df  = df[df['final_type'].isin(SKI_TYPES)].copy()
-swim_df = df[df['final_type'].isin(SWIM_TYPES)].copy()
+# Eq-named activities are equity declarations — exclude them from sport tabs
+# so their declared distances don't corrupt actual swim/ski metrics.
+# Bike is kept whole because SBEq entries are real indoor rides.
+_eq_mask = df['name'].str.match(process_data._EQ_PATTERN, na=False)
+bike_df  = df[df['final_type'].isin(BIKE_TYPES)].copy()
+ski_df   = df[df['final_type'].isin(SKI_TYPES)  & ~_eq_mask].copy()
+swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 
 render_sync_sidebar()
 
