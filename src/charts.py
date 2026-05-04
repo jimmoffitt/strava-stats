@@ -361,6 +361,29 @@ def make_equity_annual_chart(equity_df, current_year):
     return fig
 
 
+def make_labeled_bar_chart(labels, values, title, x_label, y_label, color=None):
+    """Generic bar chart with arbitrary string labels — useful for period-filtered views."""
+    if color is None:
+        color = STRAVA_ORANGE
+    fig = go.Figure(go.Bar(
+        x=list(labels),
+        y=list(values),
+        marker_color=color,
+        text=[f"{v:,.0f}" for v in values],
+        textposition='outside',
+    ))
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        plot_bgcolor='white',
+        margin=dict(t=50, b=40, l=40, r=20),
+        showlegend=False,
+    )
+    fig.update_yaxes(gridcolor='#eeeeee')
+    return fig
+
+
 def make_recent_months_chart(months_df, this_year, last_year, unit_label):
     """
     Grouped bar chart: this year (orange) vs last year (blue) for recent months.

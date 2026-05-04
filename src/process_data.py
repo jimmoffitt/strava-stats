@@ -13,8 +13,13 @@ def process_activities(activities_list):
     # 1. Basic conversion
     df = pd.DataFrame(activities_list)
     
-    # 2. Date parsing
-    df['start_date_local'] = pd.to_datetime(df['start_date_local'])
+    # 2. Date parsing — normalize to tz-naive so all comparisons are consistent.
+    # Strava stores start_date_local with a Z suffix (UTC-equivalent) even though
+    # the value represents local time. Stripping tz info here means every caller
+    # can compare dates without tz-aware/tz-naive mismatches.
+    df['start_date_local'] = (
+        pd.to_datetime(df['start_date_local'], utc=True).dt.tz_convert(None)
+    )
     df['year'] = df['start_date_local'].dt.year
     
     # 3. Unit Conversion & Defaults
@@ -651,6 +656,133 @@ def aggregate_equity_by_month(df, year, settings):
             'total': bike + ski + swim,
         })
     return pd.DataFrame(rows)
+
+
+def compute_period_stats(df):
+    """
+    Compute wrapped-style stats for any pre-filtered period.
+    Unlike compute_wrapped_stats, this accepts an arbitrary df slice —
+    no specific year required, no prior-year comparison.
+    """
+    import calendar as cal
+
+    if df.empty:
+        return {}
+
+    df = df.copy()
+
+    totals = {
+        'activities': len(df),
+        'miles':      df['distance_miles'].sum(),
+        'hours':      df['moving_time'].sum() / 3600,
+        'vert_ft':    df['elevation_feet'].sum(),
+    }
+
+    # Sport breakdown
+    sport = (
+        df.groupby('final_type')
+        .agg(
+            activities=('id', 'count'),
+            miles=('distance_miles', 'sum'),
+            hours=('moving_time', lambda x: x.sum() / 3600),
+            vert_ft=('elevation_feet', 'sum'),
+        )
+        .reset_index()
+        .sort_values('activities', ascending=False)
+    )
+
+    # Longest single activity by distance
+    la_row = df.loc[df['distance_miles'].idxmax()]
+    longest_activity = {
+        'name':  la_row['name'],
+        'date':  la_row['start_date_local'].date(),
+        'miles': la_row['distance_miles'],
+        'type':  la_row['final_type'],
+    }
+
+    # Biggest week by distance
+    iso = df['start_date_local'].dt.isocalendar()
+    df['_iso_year'] = iso['year'].values
+    df['_iso_week'] = iso['week'].values
+    weekly = df.groupby(['_iso_year', '_iso_week'])['distance_miles'].sum()
+    if not weekly.empty:
+        bw_idx = weekly.idxmax()
+        biggest_week = {'miles': weekly.max(), 'label': f"Week {bw_idx[1]}, {bw_idx[0]}"}
+    else:
+        biggest_week = {'miles': 0, 'label': 'N/A'}
+
+    # Best vert day
+    df['_date'] = df['start_date_local'].dt.date
+    daily_vert = df.groupby('_date')['elevation_feet'].sum()
+    bv_date = daily_vert.idxmax()
+    best_vert_day = {'date': bv_date, 'vert_ft': daily_vert.max()}
+
+    # Longest consecutive active streak
+    dates = sorted(df['_date'].unique())
+    max_streak = cur_streak = (1 if dates else 0)
+    for i in range(1, len(dates)):
+        if (dates[i] - dates[i - 1]).days == 1:
+            cur_streak += 1
+            max_streak = max(max_streak, cur_streak)
+        else:
+            cur_streak = 1
+
+    # Fun facts
+    fun_facts = {
+        'everests':    totals['vert_ft'] / 29032,
+        'earth_pct':   totals['miles'] / 24901 * 100,
+        'days_moving': totals['hours'] / 24,
+    }
+
+    # Yearly breakdown
+    yearly = (
+        df.groupby('year')
+        .agg(
+            miles=('distance_miles', 'sum'),
+            hours=('moving_time', lambda x: x.sum() / 3600),
+            count=('id', 'count'),
+        )
+        .reset_index()
+        .sort_values('year')
+    )
+
+    # Monthly breakdown — labels include year suffix when multiple years present
+    df['_month'] = df['start_date_local'].dt.month
+    multi_year = len(df['year'].unique()) > 1
+    monthly = (
+        df.groupby(['year', '_month'])
+        .agg(
+            miles=('distance_miles', 'sum'),
+            hours=('moving_time', lambda x: x.sum() / 3600),
+            count=('id', 'count'),
+        )
+        .reset_index()
+        .sort_values(['year', '_month'])
+    )
+    monthly['month_label'] = monthly.apply(
+        lambda r: f"{cal.month_abbr[int(r['_month'])]} '{str(int(r['year']))[-2:]}"
+                  if multi_year else cal.month_abbr[int(r['_month'])],
+        axis=1,
+    )
+
+    return {
+        'totals':           totals,
+        'sport_breakdown':  sport,
+        'longest_activity': longest_activity,
+        'biggest_week':     biggest_week,
+        'best_vert_day':    best_vert_day,
+        'longest_streak':   max_streak,
+        'fun_facts':        fun_facts,
+        'yearly':           yearly,
+        'monthly':          monthly,
+    }
+
+
+def get_longest_activities(df, sort_col='distance_miles', n=20):
+    """Returns the top n activities sorted by sort_col descending."""
+    if df.empty:
+        return pd.DataFrame()
+    return df.nlargest(n, sort_col).reset_index(drop=True)
 
 
 def aggregate_recent_months_by_sport(df, sport, n_months):

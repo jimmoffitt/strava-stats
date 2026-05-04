@@ -1,4 +1,6 @@
 certifi==2025.11.12
+kaleido>=1.3.0
+streamlit>=1.50.0
 charset-normalizer==3.4.4
 contourpy==1.3.0
 cycler==0.12.1

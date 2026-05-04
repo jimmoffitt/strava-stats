@@ -2,9 +2,12 @@
 Strava Stats — Interactive Streamlit Dashboard
 Multi-tab layout built with Plotly charts.
 """
+import io
 import json
 import os
-from datetime import date, timedelta
+import time as _time
+import zipfile
+from datetime import date, datetime as _datetime, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +16,7 @@ from src import config, process_data
 from src.charts import (
     make_equity_annual_chart,
     make_equity_monthly_chart,
+    make_labeled_bar_chart,
     make_monthly_chart,
     make_period_comparison_chart,
     make_recent_months_chart,
@@ -121,6 +125,16 @@ def load_gear_map():
 # ---------------------------------------------------------------------------
 # ISO-week navigation helpers
 # ---------------------------------------------------------------------------
+def _fmt_date(dt):
+    """Format a date or Timestamp as M/D/YYYY without leading zeros (cross-platform)."""
+    return f"{dt.month}/{dt.day}/{dt.year}"
+
+
+def _fmt_date_long(dt):
+    """Format a date as 'Mon Jan 5, 2025' without leading zeros (cross-platform)."""
+    return dt.strftime('%a %b ') + str(dt.day) + dt.strftime(', %Y')
+
+
 def _prev_iso_week(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     prev_monday = monday - timedelta(weeks=1)
@@ -139,8 +153,8 @@ def _week_label(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     sunday = monday + timedelta(days=6)
     if monday.year == sunday.year:
-        return f"Week {iso_week} ({monday.strftime('%b %-d')} – {sunday.strftime('%b %-d, %Y')})"
-    return f"Week {iso_week} ({monday.strftime('%b %-d, %Y')} – {sunday.strftime('%b %-d, %Y')})"
+        return f"Week {iso_week} ({monday.strftime('%b ') + str(monday.day)} – {sunday.strftime('%b ') + str(sunday.day) + sunday.strftime(', %Y')})"
+    return f"Week {iso_week} ({monday.strftime('%b ') + str(monday.day) + monday.strftime(', %Y')} – {sunday.strftime('%b ') + str(sunday.day) + sunday.strftime(', %Y')})"
 
 
 # ---------------------------------------------------------------------------
@@ -373,26 +387,17 @@ def render_bike_tab(bike_df, gear_map):
     dist_col = 'miles' if unit == 'Miles' else 'km'
     dist_label = 'Miles' if unit == 'Miles' else 'Km'
 
-    # --- Gear checkboxes ---
-    st.markdown("**Filter by bike:**")
     gear_ids = sorted(
         bike_df['gear_id'].unique().tolist(),
         key=lambda g: gear_map.get(g, g or '') if g else '',
     )
 
-    selected_gears = []
-    gear_cols = st.columns(min(len(gear_ids), 4))
-    for i, gid in enumerate(gear_ids):
-        label = gear_map.get(gid, gid) if gid else "Unknown Bike"
-        key = f"bike_gear_{gid}"
-        checked = gear_cols[i % len(gear_cols)].checkbox(label, value=True, key=key)
-        if checked:
-            selected_gears.append(gid)
-
-    # Filter bike_df by selected gears
+    # Read gear selections from session state — default to all selected on first load
+    selected_gears = [
+        gid for gid in gear_ids
+        if st.session_state.get(f"bike_gear_{gid}", True)
+    ]
     filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
-
-    st.divider()
 
     # --- Dispatch to view ---
     if time_mode == "Year":
@@ -402,13 +407,33 @@ def render_bike_tab(bike_df, gear_map):
     elif time_mode == "Week":
         render_week_view(filtered_df, dist_col, dist_label)
 
+    if unit == 'Miles':
+        fmt_bike = lambda r: f"{r['distance_miles']:,.1f} mi"
+    else:
+        fmt_bike = lambda r: f"{r['distance'] / 1000:.1f} km"
+
+    st.divider()
+    _render_recent_table(filtered_df, fmt_bike, "Most Recent Rides", key_prefix="bike")
+
+    st.divider()
+    _render_longest_table(filtered_df, 'distance_miles', fmt_bike, "Longest Rides")
+
+    st.divider()
+
+    # --- Gear filter (bottom) ---
+    st.markdown("**Filter by bike:**")
+    gear_cols = st.columns(min(len(gear_ids), 4))
+    for i, gid in enumerate(gear_ids):
+        label = gear_map.get(gid, gid) if gid else "Unknown Bike"
+        gear_cols[i % len(gear_cols)].checkbox(label, value=True, key=f"bike_gear_{gid}")
+
 
 # ---------------------------------------------------------------------------
 # Ski tab
 # ---------------------------------------------------------------------------
 def render_ski_tab(ski_df, settings):
     if ski_df.empty:
-        st.info("No ski activities found in the archive.")
+        st.info("No snow activities found in the archive.")
         return
 
     goal_vert = settings['goals']['ski_season_vert_ft']
@@ -462,16 +487,16 @@ def render_ski_tab(ski_df, settings):
     st.divider()
 
     # --- Ski days table ---
-    st.subheader(f"{selected_label} — Ski Days")
+    st.subheader(f"{selected_label} — Snow Days")
     days_df = process_data.get_ski_days_table(ski_df, selected_key)
 
     if days_df.empty:
-        st.info("No ski days recorded for this season yet.")
+        st.info("No snow days recorded for this season yet.")
         return
 
     # Format for display
     display = days_df.copy()
-    display['date'] = pd.to_datetime(display['date']).dt.strftime('%a %b %-d, %Y')
+    display['date'] = pd.to_datetime(display['date']).apply(_fmt_date_long)
     display['vert_ft'] = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
     display['distance_mi'] = display['distance_mi'].apply(lambda x: f"{x:.1f}")
     display['hours'] = display['hours'].apply(lambda x: f"{x:.1f}")
@@ -485,6 +510,21 @@ def render_ski_tab(ski_df, settings):
         'hours': 'Hours',
     })
     st.dataframe(display, use_container_width=True, hide_index=True)
+
+    st.divider()
+    _render_recent_table(
+        ski_df,
+        lambda r: f"{r['elevation_feet']:,.0f} ft vert",
+        "Most Recent Snow Activities",
+        key_prefix="ski",
+    )
+
+    st.divider()
+    _render_longest_table(
+        ski_df, 'elevation_feet',
+        lambda r: f"{r['elevation_feet']:,.0f} ft",
+        "Biggest Snow Days (All Seasons)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +625,7 @@ def render_swim_tab(swim_df, settings):
         return
 
     display = log_df.copy()
-    display['Date']     = pd.to_datetime(display['start_date_local']).dt.strftime('%-m/%-d/%Y')
+    display['Date']     = pd.to_datetime(display['start_date_local']).apply(_fmt_date)
     display['Activity'] = display['name']
     display[f'Dist ({dist_label})'] = (display[dist_col]).apply(lambda x: f"{x:,.0f}")
     display['Time']     = display['moving_time'].apply(_fmt_time)
@@ -593,6 +633,17 @@ def render_swim_tab(swim_df, settings):
 
     display = display[['Date', 'Activity', f'Dist ({dist_label})', 'Time', f'Pace ({pace_label})']]
     st.dataframe(display, use_container_width=True, hide_index=True)
+
+    if unit == 'Meters':
+        fmt_swim = lambda r: f"{r['distance']:,.0f} m"
+    else:
+        fmt_swim = lambda r: f"{r['distance'] * 1.09361:,.0f} yd"
+
+    st.divider()
+    _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim")
+
+    st.divider()
+    _render_longest_table(swim_df, 'distance', fmt_swim, "Longest Swims")
 
 
 # ---------------------------------------------------------------------------
@@ -696,7 +747,7 @@ def render_equity_tab(df, settings):
         )
 
     display = show_eq.copy()
-    display['Date']     = pd.to_datetime(display['date']).dt.strftime('%-m/%-d/%Y')
+    display['Date']     = pd.to_datetime(display['date']).apply(_fmt_date)
     display['Activity'] = display['name']
     display['Type']     = display['final_type']
     display['Prefix']   = display['eq_prefix'].apply(lambda p: f"{p}Eq" if p else "Eq")
@@ -709,60 +760,223 @@ def render_equity_tab(df, settings):
 
 
 # ---------------------------------------------------------------------------
+# Period / sport filter helpers
+# ---------------------------------------------------------------------------
+
+def _build_period_options(df):
+    """
+    Returns (options_list, meta_dict) for the period selector.
+    Default order: Last 365 days → most recent complete year → Last 30 days →
+    All time → older complete years → complete months (newest first).
+    """
+    import calendar as cal
+    today = date.today()
+    current_year = today.year
+
+    all_years = sorted(df['year'].unique().tolist())
+    complete_years = [y for y in all_years if y < current_year]
+    most_recent_year = complete_years[-1] if complete_years else None
+
+    options, meta = [], {}
+
+    def _add(key, value):
+        options.append(key)
+        meta[key] = value
+
+    _add("Last 365 days", {'type': 'rolling', 'days': 365})
+    if most_recent_year:
+        _add(str(most_recent_year), {'type': 'year', 'year': most_recent_year})
+    _add("Last 30 days", {'type': 'rolling', 'days': 30})
+    _add("All time",     {'type': 'all'})
+
+    for y in reversed(complete_years):
+        if y == most_recent_year:
+            continue
+        _add(str(y), {'type': 'year', 'year': y})
+
+    # Complete months with data, excluding the current month
+    df_tmp = df.copy()
+    df_tmp['_m'] = df_tmp['start_date_local'].dt.month
+    df_tmp['_y'] = df_tmp['start_date_local'].dt.year
+    pairs = sorted(df_tmp.groupby(['_y', '_m']).size().index.tolist(), reverse=True)
+    for y, m in pairs:
+        if y > current_year:
+            continue
+        if y == current_year and m >= today.month:
+            continue
+        key = f"{cal.month_abbr[m]} {y}"
+        _add(key, {'type': 'month', 'year': y, 'month': m})
+
+    return options, meta
+
+
+def _filter_by_period(df, meta):
+    """Return a copy of df filtered to the period described by meta."""
+    today = date.today()
+    ptype = meta['type']
+    if ptype == 'rolling':
+        cutoff = today - timedelta(days=meta['days'])
+        return df[df['start_date_local'].dt.date >= cutoff].copy()
+    elif ptype == 'year':
+        return df[df['year'] == meta['year']].copy()
+    elif ptype == 'month':
+        return df[
+            (df['year'] == meta['year']) &
+            (df['start_date_local'].dt.month == meta['month'])
+        ].copy()
+    return df.copy()  # 'all'
+
+
+_SPORT_OPTIONS = [
+    "All activities",
+    "Biking",
+    "Skiing",
+    "Swimming",
+    "Equity Activities",
+]
+
+
+def _filter_by_sport(df, sport_key):
+    """Return a copy of df filtered to the selected sport/activity group."""
+    eq_pat = process_data._EQ_PATTERN
+    if sport_key == "All activities":
+        return df[~df['name'].str.match(eq_pat, na=False)].copy()
+    elif sport_key == "Biking":
+        return df[df['final_type'].isin(BIKE_TYPES) & ~df['name'].str.match(eq_pat, na=False)].copy()
+    elif sport_key == "Skiing":
+        return df[df['final_type'].isin(SKI_TYPES)].copy()
+    elif sport_key == "Swimming":
+        return df[df['final_type'].isin(SWIM_TYPES)].copy()
+    elif sport_key == "Equity Activities":
+        return df[df['name'].str.match(eq_pat, na=False)].copy()
+    return df.copy()
+
+
+# ---------------------------------------------------------------------------
+# Longest activities table (shared across Bike, Swim, Ski, Wrapped tabs)
+# ---------------------------------------------------------------------------
+
+# Edit this list to add, remove, or reorder columns in the longest activities table.
+_LONGEST_COLS = [
+    ('Date',     'date_str'),
+    ('Activity', 'name'),
+    ('Type',     'final_type'),
+    ('Distance', 'dist_display'),
+    ('Duration', 'duration_str'),
+]
+
+
+def _render_recent_table(df, fmt_dist, title="Most Recent Activities", key_prefix="recent"):
+    """Render the N most recent activities with a slider to control N (default 5, max 20)."""
+    st.subheader(title)
+    if df.empty:
+        st.info("No activities to display.")
+        return
+    n = st.slider(
+        "Number to show", min_value=1, max_value=20, value=5,
+        key=f"{key_prefix}_recent_n",
+    )
+    recent = df.sort_values('start_date_local', ascending=False).head(n).copy()
+    recent['date_str']     = pd.to_datetime(recent['start_date_local']).apply(_fmt_date)
+    recent['dist_display'] = recent.apply(fmt_dist, axis=1)
+    recent['duration_str'] = recent['moving_time'].apply(_fmt_time)
+    src_cols = [src for _, src in _LONGEST_COLS]
+    hdr_map  = {src: hdr for hdr, src in _LONGEST_COLS}
+    st.dataframe(recent[src_cols].rename(columns=hdr_map), use_container_width=True, hide_index=True)
+
+
+def _render_longest_table(df, sort_col, fmt_dist, title="Longest Activities", n=20):
+    """
+    Render a sortable table of the top n activities.
+    sort_col : column to rank by (descending)
+    fmt_dist : callable(row) → formatted distance string for the Distance column
+    """
+    st.subheader(title)
+    if df.empty:
+        st.info("No activities to display.")
+        return
+    top = df.nlargest(n, sort_col).copy()
+    top['date_str']     = pd.to_datetime(top['start_date_local']).apply(_fmt_date)
+    top['dist_display'] = top.apply(fmt_dist, axis=1)
+    top['duration_str'] = top['moving_time'].apply(_fmt_time)
+    src_cols = [src for _, src in _LONGEST_COLS]
+    hdr_map  = {src: hdr for hdr, src in _LONGEST_COLS}
+    st.dataframe(top[src_cols].rename(columns=hdr_map), use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Wrapped tab
 # ---------------------------------------------------------------------------
 def render_wrapped_tab(df, settings, athlete_profile):
-    # --- Year selector ---
-    available_years = sorted(df['year'].unique().tolist(), reverse=True)
     today = date.today()
-    default_year = today.year - 1
-    default_idx = available_years.index(default_year) if default_year in available_years else 0
-    selected_year = st.selectbox("Year", available_years, index=default_idx, key="wrapped_year")
+    current_year = today.year
 
-    stats = process_data.compute_wrapped_stats(df, selected_year)
-    if not stats:
-        st.info("No data for the selected year.")
+    # --- Controls ---
+    period_options, period_meta = _build_period_options(df)
+    c1, c2, c3 = st.columns([2, 2, 1])
+    with c1:
+        selected_period = st.selectbox(
+            "Time period", period_options, index=0, key="wrapped_period"
+        )
+    with c2:
+        selected_sport = st.selectbox(
+            "Activities", _SPORT_OPTIONS, index=0, key="wrapped_sport"
+        )
+    with c3:
+        view_mode = st.radio(
+            "Breakdown", ["By Year", "By Month"], key="wrapped_view_mode"
+        )
+
+    # --- Filter ---
+    filtered = _filter_by_period(df, period_meta[selected_period])
+    filtered = _filter_by_sport(filtered, selected_sport)
+
+    if filtered.empty:
+        st.info("No activities found for the selected period and filter.")
         return
 
-    curr = stats['totals']
-    prev = stats['prior_totals']
-
-    def _delta(curr_val, prev_val):
-        if prev_val == 0:
-            return None
-        pct = (curr_val - prev_val) / prev_val * 100
-        return f"{pct:+.0f}% vs {selected_year - 1}"
-
-    # --- Headline name (if profile loaded) ---
+    # --- Header ---
     if athlete_profile.get('firstname'):
         name = athlete_profile['firstname']
-        loc = f" · {athlete_profile.get('city', '')}, {athlete_profile.get('state', '')}".rstrip(', ')
-        st.markdown(f"### {name}'s {selected_year}{loc}")
+        st.markdown(f"### {name} — {selected_period} · {selected_sport}")
     else:
-        st.markdown(f"### {selected_year} Year in Review")
+        st.markdown(f"### {selected_period} · {selected_sport}")
 
-    # --- Headline stats ---
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Activities",    f"{curr['activities']:,}",      _delta(curr['activities'], prev['activities']))
-    c2.metric("Miles",         f"{curr['miles']:,.0f}",        _delta(curr['miles'],      prev['miles']))
-    c3.metric("Hours",         f"{curr['hours']:,.0f}",        _delta(curr['hours'],      prev['hours']))
-    c4.metric("Elevation (ft)",f"{curr['vert_ft']:,.0f}",      _delta(curr['vert_ft'],   prev['vert_ft']))
+    # --- Compute stats ---
+    stats = process_data.compute_period_stats(filtered)
+    curr = stats['totals']
 
-    # Follower snapshot from profile
+    # --- Summary metrics ---
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Activities",     f"{curr['activities']:,}")
+    m2.metric("Miles",          f"{curr['miles']:,.0f}")
+    m3.metric("Hours",          f"{curr['hours']:,.0f}")
+    m4.metric("Elevation (ft)", f"{curr['vert_ft']:,.0f}")
+
     if athlete_profile.get('follower_count'):
-        f1, f2, f3 = st.columns([1, 1, 2])
-        f1.metric("Followers",  athlete_profile['follower_count'])
-        f2.metric("Following",  athlete_profile['friend_count'])
+        f1, f2, _ = st.columns([1, 1, 2])
+        f1.metric("Followers", athlete_profile['follower_count'])
+        f2.metric("Following", athlete_profile['friend_count'])
 
     st.divider()
 
-    # --- Monthly + sport charts ---
+    # --- Charts ---
     col_l, col_r = st.columns(2)
     with col_l:
-        st.plotly_chart(
-            make_monthly_chart(stats['monthly'], 'miles', 'Miles'),
-            use_container_width=True,
-        )
+        if view_mode == "By Year":
+            st.plotly_chart(
+                make_year_dist_chart(stats['yearly'], 'miles', 'Miles', current_year),
+                use_container_width=True,
+            )
+        else:
+            monthly = stats['monthly']
+            st.plotly_chart(
+                make_labeled_bar_chart(
+                    monthly['month_label'], monthly['miles'],
+                    "Monthly Distance", "Month", "Miles",
+                ),
+                use_container_width=True,
+            )
     with col_r:
         st.plotly_chart(
             make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
@@ -789,30 +1003,22 @@ def render_wrapped_tab(df, settings, athlete_profile):
 
     st.divider()
 
-    # --- Social & Achievements ---
-    st.subheader("Social & Achievements")
-    s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Kudos Received",   f"{stats['kudos']['total']:,}")
-    s2.metric("Group Activities", f"{stats['group_rides']:,}")
-    s3.metric("Personal Records", f"{stats['achievements']['prs']:,}")
-    s4.metric("Achievements",     f"{stats['achievements']['total']:,}")
-
-    mk = stats['kudos']['most_kudoed']
-    if mk and mk['kudos'] > 0:
-        st.caption(f"Most kudoed: **{mk['name']}** — {mk['kudos']} kudos  ·  {mk['date']}")
-
-    st.divider()
-
     # --- Fun Facts ---
     st.subheader("Fun Facts")
     ff = stats['fun_facts']
     f1, f2, f3 = st.columns(3)
-    f1.metric("Everests Climbed",   f"{ff['everests']:.1f}",
-              f"{curr['vert_ft']:,.0f} ft total")
-    f2.metric("Around the Earth",   f"{ff['earth_pct']:.1f}%",
-              f"{curr['miles']:,.0f} miles")
-    f3.metric("Days in Motion",     f"{ff['days_moving']:.1f}",
-              f"{curr['hours']:,.0f} hours total")
+    f1.metric("Everests Climbed", f"{ff['everests']:.1f}",   f"{curr['vert_ft']:,.0f} ft total")
+    f2.metric("Around the Earth", f"{ff['earth_pct']:.1f}%", f"{curr['miles']:,.0f} miles")
+    f3.metric("Days in Motion",   f"{ff['days_moving']:.1f}", f"{curr['hours']:,.0f} hours total")
+
+    st.divider()
+
+    # --- Longest activities ---
+    _render_longest_table(
+        filtered, 'distance_miles',
+        lambda r: f"{r['distance_miles']:,.1f} mi",
+        "Longest Activities",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +1091,433 @@ def render_trends_tab(df):
             f"{cur['month_label']} {max_year} (YTD)",
             cur, unit_label, max_year - 1,
         )
+
+
+# ---------------------------------------------------------------------------
+# Data Explorer tab
+# ---------------------------------------------------------------------------
+
+def render_explore_tab(df, gear_map):
+    """Interactive activity explorer — filter by date range, name search, and type."""
+    all_types = sorted(df['final_type'].dropna().unique().tolist())
+    min_date = df['start_date_local'].dt.date.min()
+    max_date = df['start_date_local'].dt.date.max()
+
+    c1, c2, c3 = st.columns([2, 2, 3])
+    with c1:
+        date_range = st.date_input(
+            "Date range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            key="explore_date_range",
+        )
+    with c2:
+        search_text = st.text_input(
+            "Search activity name",
+            value="",
+            placeholder="e.g. morning ride",
+            key="explore_search",
+        )
+    with c3:
+        selected_types = st.multiselect(
+            "Activity type",
+            options=all_types,
+            default=[],
+            placeholder="All types",
+            key="explore_types",
+        )
+
+    # --- Apply filters ---
+    result = df.copy()
+
+    if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+        start_d, end_d = date_range
+        result = result[
+            (result['start_date_local'].dt.date >= start_d) &
+            (result['start_date_local'].dt.date <= end_d)
+        ]
+
+    if search_text.strip():
+        result = result[result['name'].str.contains(search_text.strip(), case=False, na=False)]
+
+    if selected_types:
+        result = result[result['final_type'].isin(selected_types)]
+
+    total_hours = result['moving_time'].sum() / 3600
+    st.caption(
+        f"{len(result):,} activities · {result['distance_miles'].sum():,.0f} mi · "
+        f"{total_hours:,.0f} hrs"
+    )
+
+    if result.empty:
+        st.info("No activities match the current filters.")
+        return
+
+    # --- Build display table ---
+    display = result.sort_values('start_date_local', ascending=False).copy()
+    display['Date']      = display['start_date_local'].apply(_fmt_date)
+    display['Distance']  = display['distance_miles'].apply(lambda x: f"{x:,.1f} mi")
+    display['Duration']  = display['moving_time'].apply(_fmt_time)
+    display['Elevation'] = display['elevation_feet'].apply(lambda x: f"{x:,.0f} ft")
+    display['Gear']      = display['gear_id'].apply(
+        lambda g: gear_map.get(g, g) if g else "—"
+    )
+
+    show_cols  = ['Date', 'name', 'final_type', 'Distance', 'Duration', 'Elevation', 'Gear']
+    rename_map = {'name': 'Activity', 'final_type': 'Type'}
+
+    st.dataframe(
+        display[show_cols].rename(columns=rename_map),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Download filtered results as CSV",
+        _to_csv(display[show_cols].rename(columns=rename_map)),
+        "strava_filtered_activities.csv",
+        "text/csv",
+        key="dl_explore_csv",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Export tab
+# ---------------------------------------------------------------------------
+
+def _fig_to_png(fig, width=1200, height=500):
+    """Return PNG bytes for a Plotly figure (requires kaleido)."""
+    return fig.to_image(format='png', width=width, height=height, scale=2)
+
+
+def _to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
+
+def render_export_tab(df, settings):
+    import calendar as _cal
+    today = date.today()
+    current_year = today.year
+    current_season_key = today.year if today.month >= 10 else today.year - 1
+
+    bike_df_all = df[df['final_type'].isin(BIKE_TYPES)].copy()
+    ski_df_all  = df[df['final_type'].isin(SKI_TYPES)].copy()
+    swim_df_all = df[df['final_type'].isin(SWIM_TYPES)].copy()
+
+    # ── Section 1: Filtered activity summary ─────────────────────────────
+    st.subheader("Activity Summary")
+    period_options, period_meta = _build_period_options(df)
+    c1, c2 = st.columns(2)
+    with c1:
+        selected_period = st.selectbox(
+            "Time period", period_options, index=0, key="export_period"
+        )
+    with c2:
+        selected_sport = st.selectbox(
+            "Activities", _SPORT_OPTIONS, index=0, key="export_sport"
+        )
+
+    filtered = _filter_by_period(df, period_meta[selected_period])
+    filtered = _filter_by_sport(filtered, selected_sport)
+
+    if filtered.empty:
+        st.info("No activities for this selection.")
+        return
+
+    stats   = process_data.compute_period_stats(filtered)
+    curr    = stats['totals']
+    yearly  = stats['yearly']
+    monthly = stats['monthly']
+
+    st.caption(
+        f"{curr['activities']:,} activities · {curr['miles']:,.0f} mi · "
+        f"{curr['hours']:,.0f} hrs · {curr['vert_ft']:,.0f} ft vert"
+    )
+
+    summary_figs = {
+        'annual_distance': make_year_dist_chart(yearly, 'miles', 'Miles', current_year),
+        'monthly_distance': make_labeled_bar_chart(
+            monthly['month_label'], monthly['miles'],
+            f"Monthly Distance — {selected_period}", "Month", "Miles",
+        ),
+        'sport_breakdown': make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
+    }
+
+    col_l, col_r = st.columns(2)
+    for i, (name, fig) in enumerate(summary_figs.items()):
+        col = col_l if i % 2 == 0 else col_r
+        with col:
+            st.plotly_chart(fig, use_container_width=True, key=f"export_summary_{name}")
+            st.download_button(
+                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
+                key=f"dl_png_{name}",
+            )
+
+    st.divider()
+
+    act_cols = {
+        'start_date_local': 'Date', 'name': 'Activity', 'final_type': 'Type',
+        'distance_miles': 'Miles', 'moving_time': 'Moving Time (s)',
+        'elevation_feet': 'Elevation (ft)',
+    }
+    act_df = filtered[list(act_cols)].rename(columns=act_cols).copy()
+    act_df['Date'] = pd.to_datetime(act_df['Date']).apply(_fmt_date)
+
+    sport_df = (
+        stats['sport_breakdown'][['final_type', 'activities', 'miles', 'hours', 'vert_ft']]
+        .rename(columns={'final_type': 'Sport', 'activities': 'Activities',
+                         'miles': 'Miles', 'hours': 'Hours', 'vert_ft': 'Vert (ft)'})
+    )
+
+    longest_df = (
+        filtered.nlargest(20, 'distance_miles')
+        [['start_date_local', 'name', 'final_type', 'distance_miles', 'moving_time']]
+        .rename(columns={'start_date_local': 'Date', 'name': 'Activity', 'final_type': 'Type',
+                         'distance_miles': 'Miles', 'moving_time': 'Moving Time (s)'})
+        .copy()
+    )
+    longest_df['Date'] = pd.to_datetime(longest_df['Date']).apply(_fmt_date)
+
+    tables = {
+        'activities':         (act_df,     f"All {len(act_df):,} activities in selected period"),
+        'sport_summary':      (sport_df,   "Distance and time by sport"),
+        'longest_activities': (longest_df, "Top 20 activities by distance"),
+    }
+
+    st.subheader("Data Tables")
+    for fname, (tdf, caption) in tables.items():
+        st.caption(caption)
+        st.dataframe(tdf.head(10), use_container_width=True, hide_index=True)
+        st.download_button(
+            f"Download {fname}.csv", _to_csv(tdf), f"{fname}.csv", "text/csv",
+            key=f"dl_csv_{fname}",
+        )
+
+    st.divider()
+
+    # ── Section 2: Annual sport summaries (full dataset) ─────────────────
+    st.subheader("Annual Sport Summaries")
+    st.caption("Full archive — not filtered by the period/sport selector above.")
+
+    yearly_bike   = process_data.aggregate_by_year(bike_df_all)
+    yearly_swim   = process_data.aggregate_swim_by_year(swim_df_all)
+    seasonal_ski  = process_data.aggregate_ski_by_season(ski_df_all)
+    equity_annual = process_data.aggregate_equity_by_year(df, settings)
+
+    annual_figs = {}
+    if not yearly_bike.empty:
+        annual_figs['bike_annual_miles'] = make_year_dist_chart(
+            yearly_bike, 'miles', 'Miles', current_year
+        )
+    if not equity_annual.empty:
+        annual_figs['equity_annual'] = make_equity_annual_chart(equity_annual, current_year)
+    if not yearly_swim.empty:
+        # make_swim_year_chart expects [year, swims, <dist_col>] — trim to those three
+        swim_plot = yearly_swim[['year', 'swims', 'meters']].copy()
+        annual_figs['swim_annual_meters'] = make_swim_year_chart(swim_plot, current_year)
+    if not seasonal_ski.empty:
+        annual_figs['ski_seasonal_vert'] = make_season_vert_chart(
+            seasonal_ski, current_season_key
+        )
+
+    ann_l, ann_r = st.columns(2)
+    for i, (name, fig) in enumerate(annual_figs.items()):
+        col = ann_l if i % 2 == 0 else ann_r
+        with col:
+            st.plotly_chart(fig, use_container_width=True, key=f"export_annual_{name}")
+            st.download_button(
+                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
+                key=f"dl_annual_png_{name}",
+            )
+
+    st.divider()
+
+    # ── Section 3: Monthly breakdowns ────────────────────────────────────
+    st.subheader("Monthly Breakdowns")
+    available_years = sorted(df['year'].unique().tolist(), reverse=True)
+    sel_year = st.selectbox("Year", available_years, key="export_monthly_year")
+
+    def _bike_monthly_by_year(bdf, year):
+        sub = bdf[bdf['year'] == year].copy()
+        sub['month'] = sub['start_date_local'].dt.month
+        agg = sub.groupby('month')['distance_miles'].sum()
+        result = pd.DataFrame({'month': range(1, 13)})
+        result['month_name'] = result['month'].apply(lambda m: _cal.month_abbr[m])
+        result['miles'] = result['month'].map(agg).fillna(0)
+        return result
+
+    monthly_bike = _bike_monthly_by_year(bike_df_all, sel_year)
+    monthly_swim = process_data.aggregate_swim_by_month(swim_df_all, sel_year)
+    monthly_eq   = process_data.aggregate_equity_by_month(df, sel_year, settings)
+
+    monthly_figs = {
+        'bike_monthly_miles':  make_monthly_chart(monthly_bike, 'miles',   'Miles'),
+        'swim_monthly_meters': make_monthly_chart(monthly_swim, 'meters',  'Meters'),
+        'equity_monthly':      make_equity_monthly_chart(monthly_eq),
+    }
+
+    mo_l, mo_r = st.columns(2)
+    for i, (name, fig) in enumerate(monthly_figs.items()):
+        col = mo_l if i % 2 == 0 else mo_r
+        with col:
+            st.plotly_chart(fig, use_container_width=True, key=f"export_monthly_{name}")
+            st.download_button(
+                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
+                key=f"dl_monthly_png_{name}",
+            )
+
+    st.divider()
+
+    # ── ZIP: all charts + tables ──────────────────────────────────────────
+    st.subheader("Download Everything")
+    slug = selected_period.replace(' ', '_').replace('/', '-')
+    all_figs = {**summary_figs, **annual_figs, **monthly_figs}
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for name, fig in all_figs.items():
+            zf.writestr(f"{name}.png", _fig_to_png(fig))
+        for fname, (tdf, _) in tables.items():
+            zf.writestr(f"{fname}.csv", tdf.to_csv(index=False))
+    zip_buf.seek(0)
+
+    st.download_button(
+        "Download all as ZIP",
+        zip_buf,
+        f"strava_export_{slug}.zip",
+        "application/zip",
+        key="dl_zip_all",
+        type="primary",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sync sidebar
+# ---------------------------------------------------------------------------
+
+def _load_last_sync():
+    if os.path.exists(config.LAST_DATA_FILE):
+        with open(config.LAST_DATA_FILE) as f:
+            return json.load(f)
+    return None
+
+
+def _write_last_sync(total_count, new_count):
+    data = {
+        'last_timestamp': _datetime.now().timestamp(),
+        'last_check': _datetime.now().isoformat(),
+        'activity_count_latest_fetch': total_count,
+        'new_on_last_sync': new_count,
+    }
+    with open(config.LAST_DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def _archive_count():
+    if os.path.exists(config.ACTIVITIES_FILE):
+        with open(config.ACTIVITIES_FILE) as f:
+            return len(json.load(f))
+    return 0
+
+
+def _age_string(iso_str):
+    """Return a human-readable age like '5 min ago', '3 hr ago', '2 days ago'."""
+    try:
+        dt = _datetime.fromisoformat(iso_str)
+        secs = (_datetime.now() - dt).total_seconds()
+        if secs < 120:
+            return "just now"
+        if secs < 3600:
+            return f"{int(secs / 60)} min ago"
+        if secs < 86400:
+            return f"{int(secs / 3600)} hr ago"
+        days = int(secs / 86400)
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    except Exception:
+        return iso_str[:10]
+
+
+def _run_sync():
+    """Execute the Strava sync inside a st.status widget (renders in caller's container)."""
+    from src import fetch_data as _fd
+
+    with st.status("Syncing Strava data…", expanded=True) as status:
+        try:
+            st.write("Refreshing access token…")
+            token = _fd.get_access_token(
+                config.TOKEN_FILE, config.CLIENT_ID, config.CLIENT_SECRET
+            )
+
+            years_str = ", ".join(str(y) for y in config.STRAVA_YEARS)
+            st.write(f"Checking archive for {years_str}…")
+            before = _archive_count()
+
+            st.write("Fetching new activities from Strava…")
+            _fd.maintain_archive(token, config.ACTIVITIES_FILE, config.STRAVA_YEARS)
+
+            after = _archive_count()
+            new_ct = max(after - before, 0)
+
+            st.write("Saving sync record…")
+            _write_last_sync(after, new_ct)
+
+            if new_ct > 0:
+                label = f"✅ {new_ct} new {'activity' if new_ct == 1 else 'activities'} added"
+            else:
+                label = "✅ Already up to date"
+
+            status.update(label=label, state="complete", expanded=False)
+
+            load_activities.clear()
+            load_athlete_profile.clear()
+            load_gear_map.clear()
+
+            _time.sleep(1.5)
+            st.rerun()
+
+        except FileNotFoundError:
+            status.update(label="❌ Token file not found", state="error")
+            st.error(
+                "Run `python run_pipeline.py` once from the terminal to complete "
+                "the initial Strava OAuth flow and create the token file."
+            )
+        except ConnectionError as exc:
+            status.update(label="❌ Strava API error", state="error")
+            st.error(str(exc))
+        except Exception as exc:
+            status.update(label="❌ Sync failed", state="error")
+            st.error(str(exc))
+
+
+def render_sync_sidebar():
+    with st.sidebar:
+        st.header("Data Sync")
+
+        last = _load_last_sync()
+        if last:
+            age = _age_string(last.get('last_check', ''))
+            total = last.get('activity_count_latest_fetch', 0)
+            new_ct = last.get('new_on_last_sync')
+
+            st.caption(f"Last synced: **{age}**")
+            st.metric("Activities in archive", f"{total:,}")
+            if new_ct is not None:
+                if new_ct > 0:
+                    st.caption(f"↑ {new_ct} new on last sync")
+                else:
+                    st.caption("Up to date on last sync")
+        else:
+            st.caption("No sync record yet.")
+            st.caption("Run `python run_pipeline.py` for first-time setup, then use Sync below.")
+
+        st.divider()
+
+        if st.button("🔄 Sync Now", type="primary", use_container_width=True):
+            _run_sync()
+
+        years_str = ", ".join(str(y) for y in config.STRAVA_YEARS)
+        st.caption(f"Checking years: {years_str}")
+        st.caption("Update `STRAVA_YEARS` in `.local.env` to change scope.")
 
 
 # ---------------------------------------------------------------------------
@@ -1008,27 +1641,33 @@ bike_df = df[df['final_type'].isin(BIKE_TYPES)].copy()
 ski_df  = df[df['final_type'].isin(SKI_TYPES)].copy()
 swim_df = df[df['final_type'].isin(SWIM_TYPES)].copy()
 
-tab_bike, tab_ski, tab_swim, tab_trends, tab_equity, tab_wrapped, tab_settings = st.tabs(
-    ["Bike", "Ski", "Swim", "Trends", "Mile Equity", "Wrapped", "Settings"]
+render_sync_sidebar()
+
+# TODO: restore tab_trends and "Trends" when work on the Trends tab continues
+tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_explore, tab_export, tab_settings = st.tabs(
+    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Explore", "Export", "Settings"]
 )
+
+with tab_combined:
+    render_equity_tab(df, settings)
 
 with tab_bike:
     render_bike_tab(bike_df, gear_map)
 
-with tab_ski:
+with tab_snow:
     render_ski_tab(ski_df, settings)
 
 with tab_swim:
     render_swim_tab(swim_df, settings)
 
-with tab_trends:
-    render_trends_tab(df)
-
-with tab_equity:
-    render_equity_tab(df, settings)
-
 with tab_wrapped:
     render_wrapped_tab(df, settings, athlete_profile)
+
+with tab_explore:
+    render_explore_tab(df, gear_map)
+
+with tab_export:
+    render_export_tab(df, settings)
 
 with tab_settings:
     render_settings_tab(settings)
