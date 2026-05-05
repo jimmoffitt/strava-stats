@@ -51,7 +51,8 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
-    fig.update_yaxes(gridcolor='#eeeeee')
+    # Headroom so outside text labels aren't clipped at the top
+    fig.update_yaxes(gridcolor='#eeeeee', range=[0, yearly_df[dist_col].max() * 1.25])
     return fig
 
 
@@ -253,7 +254,8 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
-    fig.update_yaxes(gridcolor='#eeeeee')
+    y_max = max(yearly_df[y_col].max() * 1.25, annual_goal * 1.05 if annual_goal else 0)
+    fig.update_yaxes(gridcolor='#eeeeee', range=[0, y_max])
     return fig
 
 
@@ -332,7 +334,8 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, heig
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
-    fig.update_yaxes(gridcolor='#eeeeee')
+    y_max = max(seasonal_df['vert_ft'].max() * 1.25, goal_vert * 1.05 if goal_vert else 0)
+    fig.update_yaxes(gridcolor='#eeeeee', range=[0, y_max])
     return fig
 
 
