@@ -392,6 +392,19 @@ def _render_stat_block(col, label, stats, dist_col):
 # Bike tab
 # ---------------------------------------------------------------------------
 def render_bike_tab(bike_df, gear_map):
+    # --- Thin multi-year overview chart (top) ---
+    current_year = date.today().year
+    yearly_all = process_data.aggregate_by_year(bike_df)
+    if not yearly_all.empty:
+        # Read unit from session state so the chart label stays in sync after the
+        # unit radio below is changed; defaults to Miles on first load.
+        _unit = st.session_state.get('bike_unit', 'Miles')
+        _dc, _dl = ('miles', 'Miles') if _unit == 'Miles' else ('km', 'Km')
+        st.plotly_chart(
+            make_year_dist_chart(yearly_all, _dc, _dl, current_year, height=220),
+            use_container_width=True,
+        )
+
     # --- Controls row ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
@@ -574,6 +587,20 @@ def render_swim_tab(swim_df, settings):
         return
 
     monthly_goal_m = settings['goals']['swim_monthly_meters']
+    current_year = date.today().year
+
+    # --- Thin multi-year overview chart (top) ---
+    yearly_all = process_data.aggregate_swim_by_year(swim_df)
+    if not yearly_all.empty:
+        _unit = st.session_state.get('swim_unit', 'Meters')
+        _dc = 'meters' if _unit == 'Meters' else 'yards'
+        _mult = 1.0 if _unit == 'Meters' else 1.09361
+        yearly_plot = yearly_all.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
+        yearly_plot.columns = ['year', 'swims', _dc]
+        st.plotly_chart(
+            make_swim_year_chart(yearly_plot, current_year, height=220),
+            use_container_width=True,
+        )
 
     # --- Controls ---
     ctrl_l, ctrl_r = st.columns(2)

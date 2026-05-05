@@ -9,10 +9,11 @@ PRIOR_BLUE = 'rgba(70, 130, 200, 0.5)'
 SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
 
 
-def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year):
+def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=None):
     """
     Bar chart of distance by year.
     Current year bar uses light tint (YTD); prior years use Strava orange.
+    Pass height (px) for a thin/compact variant.
     """
     colors = [
         STRAVA_ORANGE_LIGHT if int(row['year']) >= current_year else STRAVA_ORANGE
@@ -39,7 +40,7 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year):
             font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
         )
 
-    fig.update_layout(
+    layout = dict(
         title=f"Annual Distance ({dist_label})",
         xaxis_title="Year",
         yaxis_title=dist_label,
@@ -47,6 +48,9 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year):
         margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
+    if height:
+        layout['height'] = height
+    fig.update_layout(**layout)
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
@@ -202,10 +206,11 @@ SWIM_TEAL = '#00B4D8'
 SWIM_TEAL_LIGHT = '#90E0EF'
 
 
-def make_swim_year_chart(yearly_df, current_year, annual_goal=None):
+def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None):
     """
     Bar chart of total meters (or yards) per year.
     Current year lighter; optional dashed annual-goal line.
+    Pass height (px) for a thin/compact variant.
     """
     colors = [
         SWIM_TEAL_LIGHT if int(row['year']) >= current_year else SWIM_TEAL
@@ -237,7 +242,7 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None):
             annotation_position='top right', annotation_font_size=11,
         )
 
-    fig.update_layout(
+    layout = dict(
         title="Annual Distance",
         xaxis_title="Year",
         yaxis_title=y_col.capitalize(),
@@ -245,6 +250,9 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None):
         margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
+    if height:
+        layout['height'] = height
+    fig.update_layout(**layout)
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
