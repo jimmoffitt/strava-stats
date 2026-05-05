@@ -478,28 +478,20 @@ def render_ski_tab(ski_df, settings):
 
     seasonal_df = process_data.aggregate_ski_by_season(ski_df)
 
-    # --- All-seasons chart ---
+    # --- 1. Thin all-seasons chart ---
     st.plotly_chart(
-        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert),
+        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220),
         use_container_width=True,
     )
 
-    # --- Season selector ---
-    season_labels = seasonal_df['season_label'].tolist()[::-1]   # newest first
-    season_keys = seasonal_df['season_key'].tolist()[::-1]
-
-    default_idx = 0
-    if current_season_key in season_keys:
-        default_idx = season_keys.index(current_season_key)
-    elif season_keys:
-        default_idx = 0  # most recent available
-
+    # --- 2. Season selector ---
+    season_labels = seasonal_df['season_label'].tolist()[::-1]
+    season_keys   = seasonal_df['season_key'].tolist()[::-1]
+    default_idx   = season_keys.index(current_season_key) if current_season_key in season_keys else 0
     selected_label = st.selectbox("Season", season_labels, index=default_idx, key="ski_season")
-    selected_key = season_keys[season_labels.index(selected_label)]
+    selected_key   = season_keys[season_labels.index(selected_label)]
 
-    st.divider()
-
-    # --- Season summary metrics ---
+    # --- 3. Season stats box ---
     row = seasonal_df[seasonal_df['season_key'] == selected_key].iloc[0]
     equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
     avg_vert = row['vert_ft'] / row['days'] if row['days'] > 0 else 0
@@ -511,41 +503,11 @@ def render_ski_tab(ski_df, settings):
         ("Avg vert / day", f"{avg_vert:,.0f} ft"),
         ("Equity miles",   f"{equity_miles:,.0f} mi"),
     ])
-
-    # Goal progress bar (show for any season, not just current)
     if goal_vert > 0:
         progress = min(row['vert_ft'] / goal_vert, 1.0)
-        pct = progress * 100
-        label = f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({pct:.0f}%)"
-        st.progress(progress, text=label)
+        st.progress(progress, text=f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({progress*100:.0f}%)")
 
-    st.divider()
-
-    # --- Ski days table ---
-    st.subheader(f"{selected_label} — Snow Days")
-    days_df = process_data.get_ski_days_table(ski_df, selected_key)
-
-    if days_df.empty:
-        st.info("No snow days recorded for this season yet.")
-        return
-
-    # Format for display
-    display = days_df.copy()
-    display['date'] = pd.to_datetime(display['date']).apply(_fmt_date_long)
-    display['vert_ft'] = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
-    display['distance_mi'] = display['distance_mi'].apply(lambda x: f"{x:.1f}")
-    display['hours'] = display['hours'].apply(lambda x: f"{x:.1f}")
-    display = display.drop(columns=['sessions'])
-    display = display.rename(columns={
-        'date': 'Date',
-        'activity': 'Activity',
-        'type': 'Type',
-        'vert_ft': 'Vert (ft)',
-        'distance_mi': 'Dist (mi)',
-        'hours': 'Hours',
-    })
-    st.dataframe(display, width="stretch", hide_index=True)
-
+    # --- 4. Most Recent Snow Activities ---
     st.divider()
     _render_recent_table(
         ski_df,
@@ -554,11 +516,34 @@ def render_ski_tab(ski_df, settings):
         key_prefix="ski",
     )
 
+    # --- 5. Biggest Snow Days (All Seasons) ---
     st.divider()
     _render_longest_table(
         ski_df, 'elevation_feet',
         lambda r: f"{r['elevation_feet']:,.0f} ft",
         "Biggest Snow Days (All Seasons)",
+    )
+
+    # --- 6. All Snow Days (reverse chronological) ---
+    st.divider()
+    st.subheader("Snow Days")
+    all_days = process_data.get_ski_days_table(ski_df)  # all seasons
+    if all_days.empty:
+        st.info("No snow days found.")
+        return
+
+    display = all_days.copy()
+    display['Date']        = pd.to_datetime(display['date']).apply(_fmt_date_long)
+    display['Season']      = display['season_label']
+    display['Activity']    = display['activity']
+    display['Type']        = display['type']
+    display['Vert (ft)']   = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
+    display['Dist (mi)']   = display['distance_mi'].apply(lambda x: f"{x:.1f}")
+    display['Hours']       = display['hours'].apply(lambda x: f"{x:.1f}")
+    st.dataframe(
+        display[['Date', 'Season', 'Activity', 'Type', 'Vert (ft)', 'Dist (mi)', 'Hours']],
+        width="stretch",
+        hide_index=True,
     )
 
 

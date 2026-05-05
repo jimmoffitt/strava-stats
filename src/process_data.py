@@ -433,24 +433,29 @@ def aggregate_ski_by_season(ski_df):
     return agg
 
 
-def get_ski_days_table(ski_df, season_key):
+def get_ski_days_table(ski_df, season_key=None):
     """
-    Returns a DataFrame with one row per calendar day in the given season.
-    Multiple sessions on the same day are aggregated; activity names are joined.
+    Returns a DataFrame with one row per calendar day, aggregated from sessions.
+    Pass season_key to filter to one season; omit (or None) for all seasons.
+    All-seasons result includes a 'season_label' column.
     """
     ski_df = ski_df.copy()
     ski_df['season_key'] = ski_df['start_date_local'].apply(_ski_season_key)
     ski_df['date'] = ski_df['start_date_local'].dt.date
     ski_df['hours'] = ski_df['moving_time'] / 3600.0
 
-    season = ski_df[ski_df['season_key'] == season_key].copy()
+    all_seasons = season_key is None
+    season = ski_df if all_seasons else ski_df[ski_df['season_key'] == season_key].copy()
     if season.empty:
-        return pd.DataFrame(columns=['date', 'activity', 'type', 'vert_ft', 'distance_mi', 'hours'])
+        cols = ['date', 'activity', 'type', 'vert_ft', 'distance_mi', 'hours']
+        if all_seasons:
+            cols.insert(1, 'season_label')
+        return pd.DataFrame(columns=cols)
 
-    # Aggregate numeric cols by date
     numeric = (
         season.groupby('date')
         .agg(
+            season_key=('season_key', 'first'),
             vert_ft=('elevation_feet', 'sum'),
             distance_mi=('distance_miles', 'sum'),
             hours=('hours', 'sum'),
@@ -459,11 +464,19 @@ def get_ski_days_table(ski_df, season_key):
         .reset_index()
     )
 
-    # Join activity names and pick dominant type per day
     names = season.groupby('date')['name'].apply(' + '.join).reset_index().rename(columns={'name': 'activity'})
     types = season.groupby('date')['final_type'].first().reset_index().rename(columns={'final_type': 'type'})
 
     result = numeric.merge(names, on='date').merge(types, on='date')
+
+    if all_seasons:
+        result['season_label'] = result['season_key'].apply(
+            lambda k: f"{k}/{str(k + 1)[-2:]}"
+        )
+        result = result[['date', 'season_label', 'activity', 'type', 'vert_ft', 'distance_mi', 'hours']]
+    else:
+        result = result[['date', 'activity', 'type', 'vert_ft', 'distance_mi', 'hours', 'sessions']]
+
     return result.sort_values('date', ascending=False).reset_index(drop=True)
 
 

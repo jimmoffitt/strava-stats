@@ -261,11 +261,11 @@ SKI_BLUE = '#4A90D9'
 SKI_BLUE_LIGHT = '#A8CBF0'
 
 
-def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
+def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, height=None):
     """
     Bar chart of total vertical feet by ski season.
     Current/in-progress season shown in lighter blue; past seasons in solid blue.
-    Optional dashed goal line.
+    Optional dashed goal line. Pass height (px) for a thin/compact variant.
     """
     colors = [
         SKI_BLUE_LIGHT if int(row['season_key']) >= current_season_key else SKI_BLUE
@@ -302,7 +302,7 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
             annotation_font_size=11,
         )
 
-    fig.update_layout(
+    layout = dict(
         title="Season Vertical Feet",
         xaxis_title="Season",
         yaxis_title="Vertical Feet",
@@ -310,6 +310,9 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
         margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
+    if height:
+        layout['height'] = height
+    fig.update_layout(**layout)
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
