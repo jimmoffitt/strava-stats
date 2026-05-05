@@ -306,10 +306,11 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None):
     return fig
 
 
-def make_equity_annual_chart(equity_df, current_year):
+def make_equity_annual_chart(equity_df, current_year, height=None):
     """
     Stacked bar chart of equity miles per year broken down by bike / ski / swim.
     Total label annotated above each bar; current year marked YTD.
+    Pass height (px) for a compact/thin variant.
     """
     fig = go.Figure()
 
@@ -348,7 +349,7 @@ def make_equity_annual_chart(equity_df, current_year):
             font=dict(size=9, color='#999999'),
         )
 
-    fig.update_layout(
+    layout = dict(
         title="Annual Equity Miles",
         xaxis_title="Year",
         yaxis_title="Equity Miles",
@@ -357,6 +358,9 @@ def make_equity_annual_chart(equity_df, current_year):
         margin=dict(t=50, b=40, l=40, r=20),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
     )
+    if height:
+        layout['height'] = height
+    fig.update_layout(**layout)
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
