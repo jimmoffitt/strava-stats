@@ -135,6 +135,26 @@ def _fmt_date_long(dt):
     return dt.strftime('%a %b ') + str(dt.day) + dt.strftime(', %Y')
 
 
+def _stats_box(items):
+    """Compact horizontal stats strip. items = list of (label, value) tuples."""
+    parts = []
+    for i, (label, value) in enumerate(items):
+        sep = '<span style="color:#ddd;margin:0 14px;font-size:18px">|</span>' if i > 0 else ''
+        parts.append(
+            f'{sep}<span style="display:inline-block">'
+            f'<span style="font-size:11px;color:#888;display:block;line-height:1.4">{label}</span>'
+            f'<strong style="font-size:15px;color:#222">{value}</strong>'
+            f'</span>'
+        )
+    html = (
+        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px 0;'
+        'background:#f7f7f7;border-radius:6px;padding:10px 16px;margin:6px 0">'
+        + ''.join(parts)
+        + '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def _prev_iso_week(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     prev_monday = monday - timedelta(weeks=1)
@@ -204,11 +224,12 @@ def render_year_view(bike_df, dist_col, dist_label):
     total_hours = yearly['hours'].sum()
     total_count = yearly['count'].sum()
 
-    m1, m2, m3 = st.columns(3)
     dist_val = f"{total_miles:,.0f} mi" if dist_col == 'miles' else f"{total_km:,.0f} km"
-    m1.metric("Total Distance", dist_val)
-    m2.metric("Total Hours", f"{total_hours:,.0f} h")
-    m3.metric("Total Activities", f"{int(total_count):,}")
+    _stats_box([
+        ("Total Distance",    dist_val),
+        ("Total Hours",       f"{total_hours:,.0f} h"),
+        ("Total Activities",  f"{int(total_count):,}"),
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -470,12 +491,13 @@ def render_ski_tab(ski_df, settings):
     equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
     avg_vert = row['vert_ft'] / row['days'] if row['days'] > 0 else 0
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Days on snow", int(row['days']))
-    m2.metric("Sessions", int(row['sessions']))
-    m3.metric("Total vert", f"{row['vert_ft']:,.0f} ft")
-    m4.metric("Avg vert / day", f"{avg_vert:,.0f} ft")
-    m5.metric("Equity miles", f"{equity_miles:,.0f} mi")
+    _stats_box([
+        ("Days on snow",   str(int(row['days']))),
+        ("Sessions",       str(int(row['sessions']))),
+        ("Total vert",     f"{row['vert_ft']:,.0f} ft"),
+        ("Avg vert / day", f"{avg_vert:,.0f} ft"),
+        ("Equity miles",   f"{equity_miles:,.0f} mi"),
+    ])
 
     # Goal progress bar (show for any season, not just current)
     if goal_vert > 0:
@@ -602,11 +624,12 @@ def render_swim_tab(swim_df, settings):
         months_with_data = int((monthly[dist_col] > 0).sum())
         avg_monthly = total_dist / months_with_data if months_with_data else 0
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Distance", f"{total_dist:,.0f} {dist_label}")
-        m2.metric("Swims", f"{total_swims}")
-        m3.metric("Avg per Swim", f"{avg_dist:,.0f} {dist_label}")
-        m4.metric("Avg per Month", f"{avg_monthly:,.0f} {dist_label}")
+        _stats_box([
+            ("Total Distance", f"{total_dist:,.0f} {dist_label}"),
+            ("Swims",          str(total_swims)),
+            ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
+            ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
+        ])
 
         # Monthly goal progress (against average achieved)
         if goal_val > 0:
@@ -657,33 +680,30 @@ def render_equity_tab(df, settings):
     annual_goal   = goals.get('annual_equity_miles', 0)
     monthly_goal  = goals.get('monthly_equity_miles', 0)
 
-    available_years = sorted(df['year'].unique().tolist(), reverse=True)
     today = date.today()
-    # Default to the most recently completed year (prior year)
+    current_year = today.year
+    yearly = process_data.aggregate_equity_by_year(df, settings)
+
+    # --- 1. Thin, wide multi-year overview chart ---
+    st.plotly_chart(
+        make_equity_annual_chart(yearly, current_year, height=220),
+        use_container_width=True,
+    )
+
+    # --- 2. Year selector ---
+    available_years = sorted(df['year'].unique().tolist(), reverse=True)
     default_year = today.year - 1
     default_idx = available_years.index(default_year) if default_year in available_years else 0
     selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year")
 
-    current_year = today.year
-    yearly  = process_data.aggregate_equity_by_year(df, settings)
+    # --- 3. Monthly breakdown ---
     monthly = process_data.aggregate_equity_by_month(df, selected_year, settings)
+    st.plotly_chart(
+        make_equity_monthly_chart(monthly, goal=monthly_goal),
+        use_container_width=True,
+    )
 
-    # --- Charts ---
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.plotly_chart(
-            make_equity_annual_chart(yearly, current_year),
-            use_container_width=True,
-        )
-    with col_r:
-        st.plotly_chart(
-            make_equity_monthly_chart(monthly, goal=monthly_goal),
-            use_container_width=True,
-        )
-
-    st.divider()
-
-    # --- Selected year metrics ---
+    # --- 4. Compact stats box ---
     yr_row = yearly[yearly['year'] == selected_year]
     if yr_row.empty:
         st.info("No data for the selected year.")
@@ -694,17 +714,18 @@ def render_equity_tab(df, settings):
     swim_eq  = yr_row['swim'].values[0]
     total_eq = yr_row['total'].values[0]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Equity Miles", f"{total_eq:,.0f}")
-    pct_str = lambda v: f"{v / total_eq * 100:.0f}% of total" if total_eq else None
-    c2.metric("Bike",  f"{bike_eq:,.0f} mi",  pct_str(bike_eq),  delta_color="off")
-    c3.metric("Ski",   f"{ski_eq:,.0f} mi",   pct_str(ski_eq),   delta_color="off")
-    c4.metric("Swim",  f"{swim_eq:,.0f} mi",  pct_str(swim_eq),  delta_color="off")
+    pct = lambda v: f" ({v / total_eq * 100:.0f}%)" if total_eq else ""
+    _stats_box([
+        ("Total Equity Miles", f"{total_eq:,.0f}"),
+        (f"Bike", f"{bike_eq:,.0f} mi{pct(bike_eq)}"),
+        (f"Ski",  f"{ski_eq:,.0f} mi{pct(ski_eq)}"),
+        (f"Swim", f"{swim_eq:,.0f} mi{pct(swim_eq)}"),
+    ])
 
     if annual_goal:
-        pct = min(total_eq / annual_goal, 1.0)
-        st.caption(f"Annual goal: {total_eq:,.0f} / {annual_goal:,} equity miles ({pct * 100:.0f}%)")
-        st.progress(pct)
+        prog = min(total_eq / annual_goal, 1.0)
+        st.caption(f"Annual goal: {total_eq:,.0f} / {annual_goal:,} equity miles ({prog * 100:.0f}%)")
+        st.progress(prog)
 
     st.caption(
         f"Conversion rates — Bike: 1 mi = 1 equity mi  ·  "
