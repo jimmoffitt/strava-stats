@@ -190,12 +190,12 @@ def render_year_view(bike_df, dist_col, dist_label):
     with col_a:
         st.plotly_chart(
             make_year_dist_chart(yearly, dist_col, dist_label, current_year),
-            width="stretch",
+            use_container_width=True,
         )
     with col_b:
         st.plotly_chart(
             make_year_time_chart(yearly, current_year),
-            width="stretch",
+            use_container_width=True,
         )
 
     # Summary metrics — totals across all years shown
@@ -269,7 +269,7 @@ def render_month_view(bike_df, dist_col, dist_label):
         title=f"{calendar.month_name[ref_month]} {ref_year} vs prior year"
               + ("" if is_current else f" + {calendar.month_name[current_month]} {current_year} (current)"),
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
     # Stats panels
     ref_stats = process_data.get_period_stats(bike_df, ref_year, month=ref_month)
@@ -341,7 +341,7 @@ def render_week_view(bike_df, dist_col, dist_label):
         title=_week_label(ref_iso_year, ref_iso_week)
               + ("" if is_current else f" + current week (in progress)"),
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
     # Stats panels
     ref_stats = process_data.get_period_stats(bike_df, ref_iso_year, iso_week=ref_iso_week)
@@ -447,7 +447,7 @@ def render_ski_tab(ski_df, settings):
     # --- All-seasons chart ---
     st.plotly_chart(
         make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert),
-        width="stretch",
+        use_container_width=True,
     )
 
     # --- Season selector ---
@@ -582,12 +582,12 @@ def render_swim_tab(swim_df, settings):
         yearly_plot.columns = ['year', 'swims', dist_col]
         st.plotly_chart(
             make_swim_year_chart(yearly_plot, current_year, annual_goal=annual_goal_val),
-            width="stretch",
+            use_container_width=True,
         )
     with col_r:
         st.plotly_chart(
             make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val),
-            width="stretch",
+            use_container_width=True,
         )
 
     st.divider()
@@ -673,12 +673,12 @@ def render_equity_tab(df, settings):
     with col_l:
         st.plotly_chart(
             make_equity_annual_chart(yearly, current_year),
-            width="stretch",
+            use_container_width=True,
         )
     with col_r:
         st.plotly_chart(
             make_equity_monthly_chart(monthly, goal=monthly_goal),
-            width="stretch",
+            use_container_width=True,
         )
 
     st.divider()
@@ -966,7 +966,7 @@ def render_wrapped_tab(df, settings, athlete_profile):
         if view_mode == "By Year":
             st.plotly_chart(
                 make_year_dist_chart(stats['yearly'], 'miles', 'Miles', current_year),
-                width="stretch",
+                use_container_width=True,
             )
         else:
             monthly = stats['monthly']
@@ -975,12 +975,12 @@ def render_wrapped_tab(df, settings, athlete_profile):
                     monthly['month_label'], monthly['miles'],
                     "Monthly Distance", "Month", "Miles",
                 ),
-                width="stretch",
+                use_container_width=True,
             )
     with col_r:
         st.plotly_chart(
             make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
-            width="stretch",
+            use_container_width=True,
         )
 
     st.divider()
@@ -1059,7 +1059,7 @@ def render_trends_tab(df):
 
     st.plotly_chart(
         make_recent_months_chart(months_df, max_year, max_year - 1, unit_label),
-        width="stretch",
+        use_container_width=True,
     )
 
     st.divider()
@@ -1248,7 +1248,7 @@ def render_export_tab(df, settings):
     for i, (name, fig) in enumerate(summary_figs.items()):
         col = col_l if i % 2 == 0 else col_r
         with col:
-            st.plotly_chart(fig, width="stretch", key=f"export_summary_{name}")
+            st.plotly_chart(fig, use_container_width=True, key=f"export_summary_{name}")
             st.download_button(
                 f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
                 key=f"dl_png_{name}",
@@ -1325,7 +1325,7 @@ def render_export_tab(df, settings):
     for i, (name, fig) in enumerate(annual_figs.items()):
         col = ann_l if i % 2 == 0 else ann_r
         with col:
-            st.plotly_chart(fig, width="stretch", key=f"export_annual_{name}")
+            st.plotly_chart(fig, use_container_width=True, key=f"export_annual_{name}")
             st.download_button(
                 f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
                 key=f"dl_annual_png_{name}",
@@ -1361,7 +1361,7 @@ def render_export_tab(df, settings):
     for i, (name, fig) in enumerate(monthly_figs.items()):
         col = mo_l if i % 2 == 0 else mo_r
         with col:
-            st.plotly_chart(fig, width="stretch", key=f"export_monthly_{name}")
+            st.plotly_chart(fig, use_container_width=True, key=f"export_monthly_{name}")
             st.download_button(
                 f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
                 key=f"dl_monthly_png_{name}",
