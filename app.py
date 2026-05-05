@@ -155,6 +155,14 @@ def _stats_box(items):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def _active_tab_setter(name):
+    """Returns an on_change callback that records which tab the user is on.
+    Used with st.tabs(default=...) to survive explicit st.rerun() calls."""
+    def _cb():
+        st.session_state['active_tab'] = name
+    return _cb
+
+
 def _prev_iso_week(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     prev_monday = monday - timedelta(weeks=1)
@@ -392,6 +400,7 @@ def render_bike_tab(bike_df, gear_map):
         time_mode = st.radio(
             "Time mode", ["Year", "Month", "Week"],
             horizontal=True, key="bike_time_mode",
+            on_change=_active_tab_setter("Bike"),
         )
     with ctrl_r:
         unit = st.radio(
@@ -483,7 +492,8 @@ def render_ski_tab(ski_df, settings):
     season_labels = seasonal_df['season_label'].tolist()[::-1]
     season_keys   = seasonal_df['season_key'].tolist()[::-1]
     default_idx   = season_keys.index(current_season_key) if current_season_key in season_keys else 0
-    selected_label = st.selectbox("Season", season_labels, index=default_idx, key="ski_season")
+    selected_label = st.selectbox("Season", season_labels, index=default_idx, key="ski_season",
+                                   on_change=_active_tab_setter("Snow"))
     selected_key   = season_keys[season_labels.index(selected_label)]
 
     # --- 3. Season stats box ---
@@ -585,7 +595,8 @@ def render_swim_tab(swim_df, settings, df=None):
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
-        selected_year = st.selectbox("Year", years, key="swim_year")
+        selected_year = st.selectbox("Year", years, key="swim_year",
+                                     on_change=_active_tab_setter("Swim"))
     with ctrl_r:
         unit = st.radio("Units", ["Meters", "Yards"], horizontal=True, key="swim_unit")
 
@@ -687,7 +698,8 @@ def render_equity_tab(df, settings):
     available_years = sorted(df['year'].unique().tolist(), reverse=True)
     default_year = today.year - 1
     default_idx = available_years.index(default_year) if default_year in available_years else 0
-    selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year")
+    selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year",
+                                 on_change=_active_tab_setter("Combined"))
 
     # --- 3. Monthly breakdown ---
     monthly = process_data.aggregate_equity_by_month(df, selected_year, settings)
@@ -930,7 +942,8 @@ def render_wrapped_tab(df, settings, athlete_profile):
     c1, c2, c3 = st.columns([2, 2, 1])
     with c1:
         selected_period = st.selectbox(
-            "Time period", period_options, index=0, key="wrapped_period"
+            "Time period", period_options, index=0, key="wrapped_period",
+            on_change=_active_tab_setter("Wrapped"),
         )
     with c2:
         selected_sport = st.selectbox(
@@ -1125,6 +1138,7 @@ def render_explore_tab(df, gear_map):
             min_value=min_date,
             max_value=max_date,
             key="explore_date_range",
+            on_change=_active_tab_setter("Explore"),
         )
     with c2:
         search_text = st.text_input(
@@ -1663,7 +1677,8 @@ render_sync_sidebar()
 
 # TODO: restore tab_trends and "Trends" when work on the Trends tab continues
 tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_explore, tab_export, tab_settings = st.tabs(
-    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Explore", "Export", "Settings"]
+    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Explore", "Export", "Settings"],
+    default=st.session_state.get('active_tab'),
 )
 
 with tab_combined:
