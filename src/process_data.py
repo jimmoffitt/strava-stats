@@ -410,12 +410,17 @@ def _ski_season_key(dt):
 def aggregate_ski_by_season(ski_df):
     """
     Returns a DataFrame with one row per ski season.
-    Columns: season_key, season_label, days, sessions, vert_ft, distance_miles, hours.
+    Columns: season_key, season_label, days, sessions, vert_ft, distance_miles, hours,
+             max_vert_day, avg_vert_day.
     """
     ski_df = ski_df.copy()
     ski_df['season_key'] = ski_df['start_date_local'].apply(_ski_season_key)
     ski_df['date'] = ski_df['start_date_local'].dt.date
     ski_df['hours'] = ski_df['moving_time'] / 3600.0
+
+    # Max single-day vert per season
+    daily_vert = ski_df.groupby(['season_key', 'date'])['elevation_feet'].sum().reset_index()
+    season_max = daily_vert.groupby('season_key')['elevation_feet'].max().rename('max_vert_day')
 
     agg = (
         ski_df.groupby('season_key')
@@ -428,6 +433,10 @@ def aggregate_ski_by_season(ski_df):
         )
         .reset_index()
         .sort_values('season_key')
+    )
+    agg = agg.merge(season_max, on='season_key', how='left')
+    agg['avg_vert_day'] = agg.apply(
+        lambda r: r['vert_ft'] / r['days'] if r['days'] > 0 else 0, axis=1
     )
     agg['season_label'] = agg['season_key'].apply(lambda y: f"{y}-{str(y + 1)[-2:]}")
     return agg
