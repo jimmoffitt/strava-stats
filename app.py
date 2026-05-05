@@ -418,9 +418,12 @@ def render_bike_tab(bike_df, gear_map):
     if time_mode == "Year":
         yearly = process_data.aggregate_by_year(filtered_df)
         if not yearly.empty:
+            max_ride = filtered_df['distance_miles'].max() if not filtered_df.empty else 0
             dist_val = f"{yearly['miles'].sum():,.0f} mi" if dist_col == 'miles' else f"{yearly['km'].sum():,.0f} km"
+            max_val  = f"{max_ride:,.1f} mi" if dist_col == 'miles' else f"{max_ride * 1.60934:,.1f} km"
             _stats_box([
                 ("Total Distance",   dist_val),
+                ("Longest Ride",     max_val),
                 ("Total Hours",      f"{yearly['hours'].sum():,.0f} h"),
                 ("Total Activities", f"{int(yearly['count'].sum()):,}"),
             ])
@@ -603,9 +606,11 @@ def render_swim_tab(swim_df, settings, df=None):
         months_with_data = int((monthly[dist_col] > 0).sum())
         avg_monthly = total_dist / months_with_data if months_with_data else 0
 
+        max_swim = swim_df['distance'].max() * mult if not swim_df.empty else 0
         _stats_box([
             ("Total Distance", f"{total_dist:,.0f} {dist_label}"),
             ("Swims",          str(total_swims)),
+            ("Longest Swim",   f"{max_swim:,.0f} {dist_label}"),
             ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
             ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
         ])
