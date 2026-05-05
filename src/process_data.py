@@ -1,4 +1,5 @@
 # src/process_data.py
+import re
 import pandas as pd
 from datetime import date, timedelta
 
@@ -48,7 +49,9 @@ def _determine_activity_type(row):
     if 'HEQ' in name: return 'Hiking'
     if 'GEQ' in name: return 'Gardening'
 
-    if 'SEQ' in name:
+    # Use word-boundary match so "[Sequ]" (→ "[SEQU]") does not trigger this branch.
+    # Plain 'SEQ' in name would substring-match "[SEQU]" and misclassify it.
+    if re.search(r'\bSEQ\b', name):
         # SEq has been used for both swimming and skiing activities.
         # Date rule: May 7 – Oct 31 → Swim; Nov 1 – May 6 → AlpineSki.
         dt = row.get('start_date_local')
