@@ -581,7 +581,7 @@ def _fmt_pace(pace_sec):
     return f"{m}:{s:02d}"
 
 
-def render_swim_tab(swim_df, settings):
+def render_swim_tab(swim_df, settings, df=None):
     if swim_df.empty:
         st.info("No swim activities found in the archive.")
         return
@@ -589,20 +589,19 @@ def render_swim_tab(swim_df, settings):
     monthly_goal_m = settings['goals']['swim_monthly_meters']
     current_year = date.today().year
 
-    # --- Thin multi-year overview chart (top) ---
-    yearly_all = process_data.aggregate_swim_by_year(swim_df)
-    if not yearly_all.empty:
+    # --- 1. Thin multi-year overview chart ---
+    yearly = process_data.aggregate_swim_by_year(swim_df)
+    if not yearly.empty:
         _unit = st.session_state.get('swim_unit', 'Meters')
         _dc = 'meters' if _unit == 'Meters' else 'yards'
-        _mult = 1.0 if _unit == 'Meters' else 1.09361
-        yearly_plot = yearly_all.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
+        yearly_plot = yearly.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
         yearly_plot.columns = ['year', 'swims', _dc]
         st.plotly_chart(
             make_swim_year_chart(yearly_plot, current_year, height=220),
             use_container_width=True,
         )
 
-    # --- Controls ---
+    # --- 2. Controls ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
@@ -611,37 +610,13 @@ def render_swim_tab(swim_df, settings):
         unit = st.radio("Units", ["Meters", "Yards"], horizontal=True, key="swim_unit")
 
     dist_col   = 'meters' if unit == 'Meters' else 'yards'
-    pace_col   = 'pace_per_100m' if unit == 'Meters' else 'pace_per_100yd'
     dist_label = 'm' if unit == 'Meters' else 'yd'
-    pace_label = '/100m' if unit == 'Meters' else '/100yd'
     mult       = 1.0 if unit == 'Meters' else 1.09361
     goal_val   = monthly_goal_m * mult
-    annual_goal_val = goal_val * 12
 
-    current_year = date.today().year
-
-    # --- Annual chart + monthly breakdown side by side ---
-    yearly  = process_data.aggregate_swim_by_year(swim_df)
     monthly = process_data.aggregate_swim_by_month(swim_df, selected_year)
 
-    col_l, col_r = st.columns(2)
-    with col_l:
-        # Pass the right column name to the chart
-        yearly_plot = yearly.rename(columns={dist_col: '_dist'})[['year', 'swims', '_dist']].copy()
-        yearly_plot.columns = ['year', 'swims', dist_col]
-        st.plotly_chart(
-            make_swim_year_chart(yearly_plot, current_year, annual_goal=annual_goal_val),
-            use_container_width=True,
-        )
-    with col_r:
-        st.plotly_chart(
-            make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val),
-            use_container_width=True,
-        )
-
-    st.divider()
-
-    # --- Year stats ---
+    # --- 3. Stats bar (under controls, before charts) ---
     year_row = yearly[yearly['year'] == selected_year]
     if not year_row.empty:
         row = year_row.iloc[0]
@@ -657,43 +632,52 @@ def render_swim_tab(swim_df, settings):
             ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
             ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
         ])
-
-        # Monthly goal progress (against average achieved)
         if goal_val > 0:
             progress = min(avg_monthly / goal_val, 1.0)
             st.progress(progress,
                 text=f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)")
 
-    st.divider()
+    # --- 4. Monthly chart ---
+    st.plotly_chart(
+        make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val),
+        use_container_width=True,
+    )
 
-    # --- Swim log ---
-    st.subheader(f"{selected_year} — Swim Log")
-    log_df = process_data.get_swim_log(swim_df, selected_year)
+    fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
 
-    if log_df.empty:
-        st.info("No swims recorded for this year.")
-        return
-
-    display = log_df.copy()
-    display['Date']     = pd.to_datetime(display['start_date_local']).apply(_fmt_date)
-    display['Activity'] = display['name']
-    display[f'Dist ({dist_label})'] = (display[dist_col]).apply(lambda x: f"{x:,.0f}")
-    display['Time']     = display['moving_time'].apply(_fmt_time)
-    display[f'Pace ({pace_label})'] = display[pace_col].apply(_fmt_pace)
-
-    display = display[['Date', 'Activity', f'Dist ({dist_label})', 'Time', f'Pace ({pace_label})']]
-    st.dataframe(display, width="stretch", hide_index=True)
-
-    if unit == 'Meters':
-        fmt_swim = lambda r: f"{r['distance']:,.0f} m"
-    else:
-        fmt_swim = lambda r: f"{r['distance'] * 1.09361:,.0f} yd"
-
+    # --- 5. Most Recent Swims ---
     st.divider()
     _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim")
 
+    # --- 6. Longest Swims ---
     st.divider()
     _render_longest_table(swim_df, 'distance', fmt_swim, "Longest Swims")
+
+    # --- 7. Swim equity events (SEq during swim season) ---
+    if df is not None:
+        eq_df = process_data.get_eq_activities(df)
+        seq_swim = eq_df[eq_df['final_type'] == 'Swim']
+        if not seq_swim.empty:
+            st.divider()
+            st.subheader("Swim Equity Events")
+            st.caption(
+                "Activities logged as swim equity (SEq) during the swim season "
+                "(May 7 – Oct 31). Excluded from the swim totals above."
+            )
+            yr_opts = ["All years"] + [str(y) for y in sorted(seq_swim['year'].unique(), reverse=True)]
+            default_idx = yr_opts.index(str(selected_year)) if str(selected_year) in yr_opts else 0
+            seq_yr = st.selectbox("Filter by year", yr_opts, index=default_idx, key="seq_swim_year")
+            show = seq_swim if seq_yr == "All years" else seq_swim[seq_swim['year'] == int(seq_yr)]
+
+            display = show.copy()
+            display['Date']         = pd.to_datetime(display['date']).apply(_fmt_date)
+            display['Activity']     = display['name']
+            display['Equity Miles'] = display['miles'].apply(lambda v: f"{v:.1f}")
+            st.dataframe(
+                display[['Date', 'Activity', 'Equity Miles']],
+                width="stretch",
+                hide_index=True,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1710,7 +1694,7 @@ with tab_snow:
     render_ski_tab(ski_df, settings)
 
 with tab_swim:
-    render_swim_tab(swim_df, settings)
+    render_swim_tab(swim_df, settings, df)
 
 with tab_wrapped:
     render_wrapped_tab(df, settings, athlete_profile)
