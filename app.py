@@ -205,31 +205,12 @@ def render_year_view(bike_df, dist_col, dist_label):
     if yearly.empty:
         st.info("No bike data found.")
         return
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.plotly_chart(
-            make_year_dist_chart(yearly, dist_col, dist_label, current_year),
-            use_container_width=True,
-        )
-    with col_b:
-        st.plotly_chart(
-            make_year_time_chart(yearly, current_year),
-            use_container_width=True,
-        )
-
-    # Summary metrics — totals across all years shown
-    total_miles = yearly['miles'].sum()
-    total_km = yearly['km'].sum()
-    total_hours = yearly['hours'].sum()
-    total_count = yearly['count'].sum()
-
-    dist_val = f"{total_miles:,.0f} mi" if dist_col == 'miles' else f"{total_km:,.0f} km"
-    _stats_box([
-        ("Total Distance",    dist_val),
-        ("Total Hours",       f"{total_hours:,.0f} h"),
-        ("Total Activities",  f"{int(total_count):,}"),
-    ])
+    # Annual distance is already shown as the thin overview chart at the top of the tab;
+    # show the hours chart here so both dimensions are visible without duplication.
+    st.plotly_chart(
+        make_year_time_chart(yearly, current_year),
+        use_container_width=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +414,17 @@ def render_bike_tab(bike_df, gear_map):
     ]
     filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
 
+    # --- Stats box (Year mode — before the hours chart) ---
+    if time_mode == "Year":
+        yearly = process_data.aggregate_by_year(filtered_df)
+        if not yearly.empty:
+            dist_val = f"{yearly['miles'].sum():,.0f} mi" if dist_col == 'miles' else f"{yearly['km'].sum():,.0f} km"
+            _stats_box([
+                ("Total Distance",   dist_val),
+                ("Total Hours",      f"{yearly['hours'].sum():,.0f} h"),
+                ("Total Activities", f"{int(yearly['count'].sum()):,}"),
+            ])
+
     # --- Dispatch to view ---
     if time_mode == "Year":
         render_year_view(filtered_df, dist_col, dist_label)
@@ -494,13 +486,13 @@ def render_ski_tab(ski_df, settings):
     # --- 3. Season stats box ---
     row = seasonal_df[seasonal_df['season_key'] == selected_key].iloc[0]
     equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
-    avg_vert = row['vert_ft'] / row['days'] if row['days'] > 0 else 0
 
     _stats_box([
         ("Days on snow",   str(int(row['days']))),
         ("Sessions",       str(int(row['sessions']))),
         ("Total vert",     f"{row['vert_ft']:,.0f} ft"),
-        ("Avg vert / day", f"{avg_vert:,.0f} ft"),
+        ("Max day",        f"{row['max_vert_day']:,.0f} ft"),
+        ("Avg vert / day", f"{row['avg_vert_day']:,.0f} ft"),
         ("Equity miles",   f"{equity_miles:,.0f} mi"),
     ])
     if goal_vert > 0:

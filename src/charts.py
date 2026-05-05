@@ -272,13 +272,32 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, heig
         for _, row in seasonal_df.iterrows()
     ]
 
-    fig = go.Figure(go.Bar(
+    has_day_stats = 'max_vert_day' in seasonal_df.columns and 'avg_vert_day' in seasonal_df.columns
+    if has_day_stats:
+        customdata = list(zip(seasonal_df['max_vert_day'], seasonal_df['avg_vert_day']))
+        hovertemplate = (
+            "<b>%{x}</b><br>"
+            "Total: %{y:,.0f} ft<br>"
+            "Max day: %{customdata[0]:,.0f} ft<br>"
+            "Avg day: %{customdata[1]:,.0f} ft"
+            "<extra></extra>"
+        )
+    else:
+        customdata = None
+        hovertemplate = None
+
+    bar_kwargs = dict(
         x=seasonal_df['season_label'],
         y=seasonal_df['vert_ft'],
         marker_color=colors,
         text=[f"{v:,.0f}" for v in seasonal_df['vert_ft']],
         textposition='outside',
-    ))
+    )
+    if customdata is not None:
+        bar_kwargs['customdata'] = customdata
+        bar_kwargs['hovertemplate'] = hovertemplate
+
+    fig = go.Figure(go.Bar(**bar_kwargs))
 
     current_rows = seasonal_df[seasonal_df['season_key'] >= current_season_key]
     for _, row in current_rows.iterrows():
