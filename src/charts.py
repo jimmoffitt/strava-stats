@@ -29,10 +29,12 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
     ))
 
     # Annotate the current-year bar with "YTD"
+    # Use integer category index for x — string year values break kaleido rendering.
+    year_list = yearly_df['year'].tolist()
     ytd_rows = yearly_df[yearly_df['year'] >= current_year]
     for _, row in ytd_rows.iterrows():
         fig.add_annotation(
-            x=str(int(row['year'])),
+            x=year_list.index(row['year']),
             y=row[dist_col],
             text="YTD",
             showarrow=False,
@@ -51,6 +53,7 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
+    fig.update_xaxes(type='category')
     # Headroom so outside text labels aren't clipped at the top
     fig.update_yaxes(gridcolor='#eeeeee', range=[0, yearly_df[dist_col].max() * 1.25])
     return fig
@@ -74,10 +77,11 @@ def make_year_time_chart(yearly_df, current_year):
         textposition='outside',
     ))
 
+    year_list = yearly_df['year'].tolist()
     ytd_rows = yearly_df[yearly_df['year'] >= current_year]
     for _, row in ytd_rows.iterrows():
         fig.add_annotation(
-            x=str(int(row['year'])),
+            x=year_list.index(row['year']),
             y=row['hours'],
             text="YTD",
             showarrow=False,
@@ -93,6 +97,7 @@ def make_year_time_chart(yearly_df, current_year):
         margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
+    fig.update_xaxes(type='category')
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
@@ -227,10 +232,11 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
         textposition='outside',
     ))
 
+    year_list = yearly_df['year'].tolist()
     ytd_rows = yearly_df[yearly_df['year'] >= current_year]
     for _, row in ytd_rows.iterrows():
         fig.add_annotation(
-            x=str(int(row['year'])), y=row[y_col],
+            x=year_list.index(row['year']), y=row[y_col],
             text="YTD", showarrow=False, yshift=28,
             font=dict(size=10, color=SWIM_TEAL_LIGHT),
         )
@@ -254,6 +260,7 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
+    fig.update_xaxes(type='category')
     y_max = max(yearly_df[y_col].max() * 1.25, annual_goal * 1.05 if annual_goal else 0)
     fig.update_yaxes(gridcolor='#eeeeee', range=[0, y_max])
     return fig
@@ -366,10 +373,11 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
         marker_color=SWIM_TEAL,
     ))
 
+    year_list = equity_df['year'].tolist()
     for _, row in equity_df.iterrows():
         if row['total'] > 0:
             fig.add_annotation(
-                x=str(int(row['year'])), y=row['total'],
+                x=year_list.index(row['year']), y=row['total'],
                 text=f"{row['total']:,.0f}",
                 showarrow=False, yshift=8, font=dict(size=10),
             )
@@ -377,7 +385,7 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
     ytd_rows = equity_df[equity_df['year'] >= current_year]
     for _, row in ytd_rows.iterrows():
         fig.add_annotation(
-            x=str(int(row['year'])), y=row['total'],
+            x=year_list.index(row['year']), y=row['total'],
             text="YTD", showarrow=False, yshift=22,
             font=dict(size=9, color='#999999'),
         )
@@ -394,6 +402,7 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
+    fig.update_xaxes(type='category')
     fig.update_yaxes(gridcolor='#eeeeee')
     return fig
 
