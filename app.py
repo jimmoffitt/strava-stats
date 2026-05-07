@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from src import config, process_data
+from src import charts as _charts_mod
 from src.charts import (
     make_equity_annual_chart,
     make_equity_monthly_chart,
@@ -153,6 +154,34 @@ def _stats_box(items):
         + '</div>'
     )
     st.markdown(html, unsafe_allow_html=True)
+
+
+def _inject_theme_css(dark: bool) -> None:
+    if dark:
+        css = """
+        <style>
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #0e1117;
+            color: #e8e8e8;
+        }
+        [data-testid="stSidebar"] { background-color: #1a1c24; }
+        [data-testid="stHeader"]  { background-color: #0e1117; }
+        .stMarkdown p, .stMarkdown li { color: #e8e8e8; }
+        </style>
+        """
+    else:
+        css = """
+        <style>
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #ffffff;
+            color: #31333F;
+        }
+        [data-testid="stSidebar"] { background-color: #f0f2f6; }
+        [data-testid="stHeader"]  { background-color: #ffffff; }
+        .stMarkdown p, .stMarkdown li { color: #31333F; }
+        </style>
+        """
+    st.markdown(css, unsafe_allow_html=True)
 
 
 def _active_tab_setter(name):
@@ -1519,6 +1548,15 @@ def _run_sync():
 
 def render_sync_sidebar():
     with st.sidebar:
+        dark_mode = st.toggle(
+            "Dark mode",
+            value=st.session_state.get('dark_mode', True),
+            key='dark_mode',
+        )
+        _charts_mod.set_theme(dark_mode)
+        _inject_theme_css(dark_mode)
+
+        st.divider()
         st.header("Data Sync")
 
         last = _load_last_sync()
