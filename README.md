@@ -1,108 +1,36 @@
-## What is this thing?
+# Strava Stats
 
-Not sure, but I know my Strava 2025 wrapped did not provide many data views I was interested in. I also have strong opinions that "wrapped" packages should not be generated until January 1. Or at least let us paying customers generate a customized one when we want.
+A personal Strava dashboard that goes deeper than the official app. Built because the annual "Wrapped" summary doesn't answer the questions I actually care about: How does this year compare to last? Am I riding more or less than 2021? How do ski and swim effort stack up against bike miles?
 
-A personal Strava activity dashboard — fetches data from the Strava API, archives it locally, and serves an interactive multi-sport analysis via Streamlit.
-
-## Project structure
-
-```
-strava-stats/
-├── data/
-│   ├── raw/                 # Activity archive (JSON, not committed)
-│   ├── processed/           # Intermediate outputs
-│   ├── images/              # Static PNGs from pipeline (legacy)
-│   ├── gear_map.json        # Bike/shoe names (written by pipeline)
-│   ├── last_data.json       # Last sync timestamp and count
-│   └── settings.json        # User goals and equity conversions
-│
-├── src/
-│   ├── config.py            # Env vars, paths, sport constants, defaults
-│   ├── fetch_data.py        # Strava API auth, token refresh, archive sync
-│   ├── process_data.py      # Pandas processing and aggregation helpers
-│   ├── charts.py            # Plotly figure factories (interactive dashboard)
-│   └── publish_data.py      # Matplotlib figure factories (static pipeline)
-│
-├── docs/screenshots/        # README example images
-├── app.py                   # Streamlit interactive dashboard
-├── run_pipeline.py          # CLI pipeline: fetch → process → publish
-└── requirements.txt
-```
-
-## Quick start
-
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Add credentials to .local.env
-echo "STRAVA_CLIENT_ID=your_id" >> .local.env
-echo "STRAVA_CLIENT_SECRET=your_secret" >> .local.env
-
-# 3. Sync activities for the first time
-python run_pipeline.py
-
-# 4. Launch dashboard
-streamlit run app.py
-```
-
-After the first pipeline run, use the **Sync Now** button in the sidebar to pull new activities without leaving the browser.
-
-## Dashboard
-
-Eight tabs, each opening with a **thin, full-width annual overview chart** that shows every year at a glance, followed by per-year/season controls and detailed breakdowns.
-
-### Combined
-
-Cross-sport equity miles stacked by year (Bike · Ski · Swim), then a monthly breakdown for the selected year. A compact stats bar shows total equity miles and each sport's share.
+Eight interactive tabs cover Bike, Snow, Swim, cross-sport equity, a Wrapped-style summary, full-text activity search, data export, and goals. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
 
 ![Combined annual chart](docs/screenshots/combined_annual.png)
 
-### Bike
+---
 
-Annual miles overview (thin), then annual riding hours, followed by a compact stats bar (total distance · longest ride · total hours · total activities). Switch to **Month** or **Week** mode for day-by-day comparison charts: selected period (orange) vs. prior-year same period (blue) vs. current in-progress period (gray).
+## What it does
 
-![Bike annual chart](docs/screenshots/bike_annual.png)
+### Multi-sport dashboard
+
+Each sport tab opens with a thin, full-width overview chart showing every year at a glance, then drops into per-year or per-season detail with a compact stats bar.
+
+**Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
+
+![Bike annual miles](docs/screenshots/bike_annual.png)
 ![Bike annual hours](docs/screenshots/bike_hours.png)
 
-Gear filter at the bottom lets you isolate rides by specific bike.
+**Snow** — vertical feet by season, days on snow, biggest days, and a full season log. Stats bar shows max single day, avg vert/day, and equity miles.
 
-### Snow
-
-All-season vertical feet at a glance (thin chart), then a season selector with a stats bar showing days on snow · sessions · total vert · **max single day** · avg vert/day · equity miles. Hover over any season bar to see all three vert metrics in the tooltip.
-
-![Snow thin annual chart](docs/screenshots/snow_annual.png)
+![Snow overview](docs/screenshots/snow_annual.png)
 ![Snow season detail](docs/screenshots/snow_season_chart.png)
 
-Below the stats: **Most Recent Snow Activities**, **Biggest Snow Days (All Seasons)**, and a full **Snow Days log** spanning all seasons in reverse chronological order with a Season column.
+**Swim** — annual meters (or yards), monthly breakdown, goal progress bar, and a swim log. Meters/Yards toggle applies throughout.
 
-### Swim
+![Swim annual](docs/screenshots/swim_annual.png)
 
-Annual meters overview (thin), then a monthly distance chart for the selected year, a stats bar (total · swims · longest swim · avg per swim · avg per month), and a monthly goal progress bar. Sections follow: **Most Recent Swims**, **Longest Swims**, and a **Swim Equity Events** table listing all SEq activities logged during the swim season (May 7 – Oct 31) with their declared equity miles.
+### Equity miles
 
-![Swim annual chart](docs/screenshots/swim_annual.png)
-
-Meters / Yards toggle applies throughout.
-
-### Wrapped
-
-Period × sport summary: pick any rolling window (Last 365 days, Last 30 days, a specific year, or a specific month) and a sport filter (All, Bike, Snow, Swim). Displays annual and monthly distance charts plus a sport-type breakdown.
-
-### Explore
-
-Full-text search across all activities with date-range and sport-type filters. Results table with CSV download.
-
-### Export
-
-Annual sport summaries, per-year monthly breakdowns, and a full activity table — each with a PNG download button and a combined ZIP download.
-
-### Settings
-
-Equity mile conversion rates and annual/monthly/seasonal goals. Changes are written to `data/settings.json` immediately.
-
-## Equity miles
-
-Normalizes cross-sport effort to a common "bike mile" unit:
+Different sports aren't directly comparable by distance, so this dashboard normalizes everything to a common "bike mile" unit:
 
 | Sport | Default conversion |
 |---|---|
@@ -110,60 +38,149 @@ Normalizes cross-sport effort to a common "bike mile" unit:
 | Swim | 100 meters = 1 equity mile |
 | Ski  | 1,000 vertical feet = 1 equity mile |
 
-Activities whose names contain an equity marker (`SEq`, `HEq`, `GEq`, etc.) are manual equity declarations and are listed for review but **excluded from calculated totals** to avoid double-counting. `SEq` activities are date-classified: swim season (May 7 – Oct 31) → Swim equity; otherwise → Ski equity.
+The **Combined** tab stacks equity miles by sport for each year so you can see total fitness output regardless of which sports you focused on. Conversion rates are configurable in the Settings tab.
 
-Conversion rates and goals are configurable in the Settings tab and persisted to `data/settings.json`.
+Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are manual equity declarations — they're listed separately and excluded from calculated totals to avoid double-counting.
 
-## Sidebar sync
+### Live data sync
 
-The sidebar shows the last sync age and total activity count. Clicking **Sync Now** runs an incremental Strava fetch inside a live progress widget, clears the data cache, and reloads the dashboard automatically.
+The sidebar shows the last sync age and total activity count. Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically.
 
-## Data storage and persistence
+Past years are fetched once and archived. Only the current year is re-checked on each sync.
 
-All data lives in the `data/` directory and persists between sessions. Nothing is sent to a remote server — everything stays local.
+### Other tabs
 
-### Activity archive
+**Wrapped** — pick any rolling window (last 365 days, last 30 days, a specific year or month) and a sport filter to get a period-in-review summary with charts and sport breakdown.
 
-The primary data store is `data/raw/my_strava_activities.json`, a flat JSON array of every activity ever synced. It grows incrementally:
+**Explore** — full-text search across all activities with date-range and sport-type filters. Results table with CSV download.
 
-- **Past years** — fetched once and never re-fetched.
-- **Current year** — checked on every sync run; only activities newer than the last archived timestamp are appended.
+**Export** — annual summaries, monthly breakdowns, and a full activity table, each with PNG download and a combined ZIP.
 
-The archive is not committed to git (listed in `.gitignore`). The dashboard reads it directly on startup via `app.py`'s cached `load_activities()`.
+**Settings** — set equity mile conversion rates and annual/monthly/seasonal goals. Changes are written to `data/settings.json` immediately.
 
-### Supporting files
+---
 
-| File | Written by | Contains |
-|---|---|---|
-| `data/raw/my_strava_activities.json` | `run_pipeline.py` / Sync | Full activity archive |
-| `data/gear_map.json` | `run_pipeline.py` / Sync | Bike ID → name mapping |
-| `data/last_data.json` | `run_pipeline.py` / Sync | Last sync timestamp and count |
-| `data/athlete_profile.json` | `run_pipeline.py` | Name, location, follower count |
-| `data/athlete_stats.json` | `run_pipeline.py` | All-time and YTD Strava totals |
-| `data/settings.json` | Settings tab in app | Goals and equity conversion rates |
+## Quick start
 
-None of these files are committed to git — they're personal data and are regenerable from the Strava API.
+```bash
+# 1. Clone and install
+git clone https://github.com/jimmoffitt/strava-stats.git
+cd strava-stats
+pip install -r requirements.txt
 
-#### `data/strava_tokens.json`
+# 2. Add your Strava credentials
+echo "STRAVA_CLIENT_ID=your_id" >> .local.env
+echo "STRAVA_CLIENT_SECRET=your_secret" >> .local.env
 
-Written on first auth and updated automatically on each token refresh. Never commit this file — it contains your OAuth credentials.
+# 3. Complete the Strava OAuth flow once to get a token
+#    See: https://developers.strava.com/docs/getting-started/
+#    The token file lives at data/strava_tokens.json
 
-To obtain it, complete the Strava OAuth flow once manually (see [Strava API Getting Started](https://developers.strava.com/docs/getting-started/)). The file structure is:
+# 4. Fetch your activity history
+python run_pipeline.py
+
+# 5. Launch the dashboard
+streamlit run app.py
+```
+
+After the first run, use the **Sync Now** button in the sidebar for incremental updates.
+
+---
+
+## How it's built
+
+### Stack
+
+| Package | Role |
+|---|---|
+| [Streamlit](https://streamlit.io) | Dashboard framework and UI |
+| [Plotly](https://plotly.com/python/) | Interactive charts |
+| [pandas](https://pandas.pydata.org) | Data processing and aggregation |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | Credentials from `.local.env` |
+| [requests](https://docs.python-requests.org) | Strava API calls and token refresh |
+| [kaleido](https://github.com/plotly/Kaleido) | Static PNG export (Export tab) |
+
+### Project structure
+
+```
+strava-stats/
+├── app.py                   # Streamlit dashboard — all tab render functions
+├── run_pipeline.py          # CLI: fetch → process → publish (static PNGs)
+│
+├── src/
+│   ├── config.py            # Env vars, file paths, sport type constants, defaults
+│   ├── fetch_data.py        # Strava OAuth, token refresh, incremental archive sync
+│   ├── process_data.py      # pandas aggregations: by year, season, month, week
+│   ├── charts.py            # Plotly figure factories (one function per chart type)
+│   └── publish_data.py      # Matplotlib figure factories (legacy static pipeline)
+│
+└── data/                    # All local data — not committed to git
+    ├── raw/                 # my_strava_activities.json + per-year YYYY.json files
+    ├── processed/           # Intermediate outputs from pipeline
+    ├── images/              # Static PNGs from pipeline (legacy)
+    ├── gear_map.json        # Bike ID → name mapping
+    ├── last_data.json       # Last sync timestamp and count
+    └── settings.json        # Goals and equity conversion rates
+```
+
+### Data flow
+
+1. `fetch_data.py` pulls activities from the Strava API and appends them to `data/raw/my_strava_activities.json` (a flat JSON array).
+2. `app.py` reads the archive on startup via a cached `load_activities()` call, auto-merging any per-year `data/raw/YYYY.json` files for years not already in the main archive.
+3. `process_data.process_activities()` converts the raw list to a pandas DataFrame, adding derived columns (`distance_miles`, `elevation_feet`, `final_type`, `year`, `hours`).
+4. Each tab's render function calls aggregation helpers (`aggregate_by_year`, `aggregate_ski_by_season`, `aggregate_equity_by_year`, etc.) and passes the results to Plotly figure factories in `charts.py`.
+
+### Key data fields
 
 ```json
 {
-    "access_token": "your_access_token_here",
-    "refresh_token": "your_refresh_token_here",
+    "name": "Morning ride",
+    "distance": 26215.8,
+    "moving_time": 5587,
+    "total_elevation_gain": 141.9,
+    "type": "Ride",
+    "sport_type": "Ride",
+    "start_date_local": "2025-06-15T08:30:00Z",
+    "gear_id": "b9657721"
+}
+```
+
+`distance` is meters; `total_elevation_gain` is meters. The processing layer converts to miles and feet.
+
+### Adding a new chart
+
+1. Add a pure function to `src/charts.py` that accepts a DataFrame and returns a `go.Figure`.
+2. Call the aggregation helper you need from `src/process_data.py` (or add one there).
+3. Call `st.plotly_chart(your_fig, use_container_width=True)` inside the relevant `render_*` function in `app.py`.
+
+---
+
+## Configuration
+
+### Credentials — `.local.env`
+
+```
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+STRAVA_YEARS=2024,2025          # optional: years to fetch on first run
+```
+
+### OAuth token — `data/strava_tokens.json`
+
+Generated by completing the Strava OAuth flow once. The pipeline refreshes it automatically every 6 hours. Never commit this file.
+
+```json
+{
+    "access_token": "...",
+    "refresh_token": "...",
     "expires_at": 1234567890,
     "token_type": "Bearer"
 }
 ```
 
-The pipeline refreshes the access token automatically when it expires (every 6 hours).
+### Goals and conversions — `data/settings.json`
 
-#### `data/settings.json`
-
-Created automatically with defaults on first run. Edit via the Settings tab, or manually:
+Created automatically with defaults on first run. Edit via the Settings tab or directly:
 
 ```json
 {
@@ -177,36 +194,5 @@ Created automatically with defaults on first run. Edit via the Settings tab, or 
     "ski_season_vert_ft": 200000,
     "swim_monthly_meters": 10000
   }
-}
-```
-
-#### `data/raw/YYYY.json`
-
-Per-year activity files (e.g. `2025.json`, `2026.json`) are the same format as the main archive. The dashboard auto-merges any year files found in `data/raw/` that are not already in the main archive.
-
-### How the dashboard loads data
-
-On startup, `app.py` calls `load_activities()` (decorated with `@st.cache_data`):
-
-1. Reads `data/raw/my_strava_activities.json` as the base archive.
-2. Scans `data/raw/` for any per-year files whose year is **not** already in the archive and merges them in.
-3. Processes the merged list into a pandas DataFrame via `process_data.process_activities()`.
-
-The result is cached for the lifetime of the Streamlit session.
-
-## Strava activity data
-
-Key fields used from the Strava API:
-
-```json
-{
-    "name": "Lily dropped me off wander",
-    "distance": 26215.8,
-    "moving_time": 5587,
-    "total_elevation_gain": 141.9,
-    "type": "Ride",
-    "sport_type": "Ride",
-    "start_date_local": "2025-12-31T10:29:50Z",
-    "gear_id": "b9657721"
 }
 ```
