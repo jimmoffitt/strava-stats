@@ -8,6 +8,48 @@ STRAVA_ORANGE_LIGHT = '#FCAB87'
 PRIOR_BLUE = 'rgba(70, 130, 200, 0.5)'
 SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
 
+# ---------------------------------------------------------------------------
+# Theme system — call set_theme(dark) once per Streamlit render cycle from
+# render_sync_sidebar(); all chart functions read _dark automatically.
+# ---------------------------------------------------------------------------
+_dark = False
+
+
+def set_theme(dark: bool) -> None:
+    global _dark
+    _dark = dark
+
+
+def _plot_bg():
+    return 'rgba(255,255,255,0.04)' if _dark else 'white'
+
+
+def _paper_bg():
+    return 'rgba(0,0,0,0)' if _dark else 'white'
+
+
+def _grid_color():
+    return 'rgba(255,255,255,0.10)' if _dark else '#eeeeee'
+
+
+def _font_color():
+    return '#e8e8e8' if _dark else '#31333F'
+
+
+def _base_layout(**kwargs) -> dict:
+    """Common layout keys for every chart; callers merge in chart-specific keys."""
+    return dict(
+        plot_bgcolor=_plot_bg(),
+        paper_bgcolor=_paper_bg(),
+        font=dict(color=_font_color()),
+        margin=dict(t=50, b=40, l=40, r=20),
+        **kwargs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Chart factories
+# ---------------------------------------------------------------------------
 
 def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=None):
     """
@@ -28,7 +70,6 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
         textposition='outside',
     ))
 
-    # Annotate the current-year bar with "YTD"
     # Use integer category index for x — string year values break kaleido rendering.
     year_list = yearly_df['year'].tolist()
     ytd_rows = yearly_df[yearly_df['year'] >= current_year]
@@ -42,20 +83,17 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
             font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
         )
 
-    layout = dict(
+    layout = _base_layout(
         title=f"Annual Distance ({dist_label})",
         xaxis_title="Year",
         yaxis_title=dist_label,
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
     fig.update_xaxes(type='category')
-    # Headroom so outside text labels aren't clipped at the top
-    fig.update_yaxes(gridcolor='#eeeeee', range=[0, yearly_df[dist_col].max() * 1.25])
+    fig.update_yaxes(gridcolor=_grid_color(), range=[0, yearly_df[dist_col].max() * 1.25])
     return fig
 
 
@@ -89,16 +127,14 @@ def make_year_time_chart(yearly_df, current_year):
             font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
         )
 
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title="Annual Riding Hours",
         xaxis_title="Year",
         yaxis_title="Hours",
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
-    )
+    ))
     fig.update_xaxes(type='category')
-    fig.update_yaxes(gridcolor='#eeeeee')
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -141,16 +177,14 @@ def make_period_comparison_chart(
             marker_color=STRAVA_ORANGE,
         ))
 
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title=title,
         xaxis_title=x_label,
         yaxis_title=dist_label,
         barmode='overlay',
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    )
-    fig.update_yaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -174,15 +208,13 @@ def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None):
             annotation_position='top right',
             annotation_font_size=11,
         )
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title=f"Distance by Month ({dist_label})",
         xaxis_title="Month",
         yaxis_title=dist_label,
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
-    )
-    fig.update_yaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -197,14 +229,13 @@ def make_sport_breakdown_chart(sport_df, dist_col, dist_label):
         text=[f"{v:,.0f}" for v in sorted_df[dist_col]],
         textposition='outside',
     ))
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title=f"Distance by Sport ({dist_label})",
         xaxis_title=dist_label,
-        plot_bgcolor='white',
         margin=dict(t=50, b=40, l=60, r=60),
         showlegend=False,
-    )
-    fig.update_xaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_xaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -249,12 +280,10 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
             annotation_position='top right', annotation_font_size=11,
         )
 
-    layout = dict(
+    layout = _base_layout(
         title="Annual Distance",
         xaxis_title="Year",
         yaxis_title=y_col.capitalize(),
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
     if height:
@@ -262,7 +291,7 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
     fig.update_layout(**layout)
     fig.update_xaxes(type='category')
     y_max = max(yearly_df[y_col].max() * 1.25, annual_goal * 1.05 if annual_goal else 0)
-    fig.update_yaxes(gridcolor='#eeeeee', range=[0, y_max])
+    fig.update_yaxes(gridcolor=_grid_color(), range=[0, y_max])
     return fig
 
 
@@ -330,19 +359,17 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, heig
             annotation_font_size=11,
         )
 
-    layout = dict(
+    layout = _base_layout(
         title="Season Vertical Feet",
         xaxis_title="Season",
         yaxis_title="Vertical Feet",
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
     )
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
     y_max = max(seasonal_df['vert_ft'].max() * 1.25, goal_vert * 1.05 if goal_vert else 0)
-    fig.update_yaxes(gridcolor='#eeeeee', range=[0, y_max])
+    fig.update_yaxes(gridcolor=_grid_color(), range=[0, y_max])
     return fig
 
 
@@ -379,7 +406,7 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
             fig.add_annotation(
                 x=year_list.index(row['year']), y=row['total'],
                 text=f"{row['total']:,.0f}",
-                showarrow=False, yshift=8, font=dict(size=10),
+                showarrow=False, yshift=8, font=dict(size=10, color=_font_color()),
             )
 
     ytd_rows = equity_df[equity_df['year'] >= current_year]
@@ -390,20 +417,18 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
             font=dict(size=9, color='#999999'),
         )
 
-    layout = dict(
+    layout = _base_layout(
         title="Annual Equity Miles",
         xaxis_title="Year",
         yaxis_title="Equity Miles",
         barmode='stack',
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
     )
     if height:
         layout['height'] = height
     fig.update_layout(**layout)
     fig.update_xaxes(type='category')
-    fig.update_yaxes(gridcolor='#eeeeee')
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -418,15 +443,13 @@ def make_labeled_bar_chart(labels, values, title, x_label, y_label, color=None):
         text=[f"{v:,.0f}" for v in values],
         textposition='outside',
     ))
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title=title,
         xaxis_title=x_label,
         yaxis_title=y_label,
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         showlegend=False,
-    )
-    fig.update_yaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -457,16 +480,14 @@ def make_recent_months_chart(months_df, this_year, last_year, unit_label):
         marker_color=this_year_colors,
     ))
 
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title=f"Monthly {unit_label} — {this_year} vs {last_year}",
         xaxis_title="Month",
         yaxis_title=unit_label,
         barmode='group',
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    )
-    fig.update_yaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
 
 
@@ -504,14 +525,12 @@ def make_equity_monthly_chart(monthly_df, goal=None):
             annotation_position='top right', annotation_font_size=11,
         )
 
-    fig.update_layout(
+    fig.update_layout(**_base_layout(
         title="Monthly Equity Miles",
         xaxis_title="Month",
         yaxis_title="Equity Miles",
         barmode='stack',
-        plot_bgcolor='white',
-        margin=dict(t=50, b=40, l=40, r=20),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    )
-    fig.update_yaxes(gridcolor='#eeeeee')
+    ))
+    fig.update_yaxes(gridcolor=_grid_color())
     return fig
