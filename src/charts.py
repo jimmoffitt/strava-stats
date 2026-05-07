@@ -38,13 +38,14 @@ def _font_color():
 
 def _base_layout(**kwargs) -> dict:
     """Common layout keys for every chart; callers merge in chart-specific keys."""
-    return dict(
+    base = dict(
         plot_bgcolor=_plot_bg(),
         paper_bgcolor=_paper_bg(),
         font=dict(color=_font_color()),
         margin=dict(t=50, b=40, l=40, r=20),
-        **kwargs,
     )
+    base.update(kwargs)
+    return base
 
 
 # ---------------------------------------------------------------------------
