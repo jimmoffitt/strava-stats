@@ -8,6 +8,12 @@ STRAVA_ORANGE_LIGHT = '#FCAB87'
 PRIOR_BLUE = 'rgba(70, 130, 200, 0.5)'
 SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
 
+# Equity sport palette
+RUN_PURPLE    = '#8B5CF6'
+HIKE_GREEN    = '#22C55E'
+PADDLE_CYAN   = '#06B6D4'
+CUSTOM_GRAY   = '#9CA3AF'
+
 # ---------------------------------------------------------------------------
 # Theme system — call set_theme(dark) once per Streamlit render cycle from
 # render_sync_sidebar(); all chart functions read _dark automatically.
@@ -197,7 +203,8 @@ def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None):
         y=monthly_df[dist_col],
         marker_color=STRAVA_ORANGE,
         text=[f"{v:,.0f}" if v > 0 else "" for v in monthly_df[dist_col]],
-        textposition='outside',
+        textposition='inside',
+        insidetextanchor='end',
     ))
     if goal and goal > 0:
         fig.add_hline(
@@ -214,6 +221,7 @@ def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None):
         xaxis_title="Month",
         yaxis_title=dist_label,
         showlegend=False,
+        height=280,
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
@@ -374,32 +382,28 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, heig
     return fig
 
 
-def make_equity_annual_chart(equity_df, current_year, height=None):
+def make_equity_annual_chart(equity_df, current_year, ref_label='Bike', height=None):
     """
-    Stacked bar chart of equity miles per year broken down by bike / ski / swim.
+    Stacked bar chart of equity miles per year broken down by sport.
+    Only adds traces for sports that have at least one non-zero value.
     Total label annotated above each bar; current year marked YTD.
     Pass height (px) for a compact/thin variant.
     """
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        x=equity_df['year'].astype(str),
-        y=equity_df['bike'],
-        name='Bike',
-        marker_color=STRAVA_ORANGE,
-    ))
-    fig.add_trace(go.Bar(
-        x=equity_df['year'].astype(str),
-        y=equity_df['ski'],
-        name='Ski',
-        marker_color=SKI_BLUE,
-    ))
-    fig.add_trace(go.Bar(
-        x=equity_df['year'].astype(str),
-        y=equity_df['swim'],
-        name='Swim',
-        marker_color=SWIM_TEAL,
-    ))
+    _SPORT_COLORS = [
+        ('bike',   STRAVA_ORANGE, 'Bike'),
+        ('run',    RUN_PURPLE,    'Run'),
+        ('ski',    SKI_BLUE,      'Ski'),
+        ('swim',   SWIM_TEAL,     'Swim'),
+        ('hike',   HIKE_GREEN,    'Hike'),
+        ('paddle', PADDLE_CYAN,   'Paddle'),
+        ('custom', CUSTOM_GRAY,   'Custom'),
+    ]
+    x = equity_df['year'].astype(str)
+    for col, color, label in _SPORT_COLORS:
+        if col in equity_df.columns and equity_df[col].sum() > 0:
+            fig.add_trace(go.Bar(x=x, y=equity_df[col], name=label, marker_color=color))
 
     year_list = equity_df['year'].tolist()
     for _, row in equity_df.iterrows():
@@ -419,9 +423,9 @@ def make_equity_annual_chart(equity_df, current_year, height=None):
         )
 
     layout = _base_layout(
-        title="Annual Equity Miles",
+        title=f"Annual Equity {ref_label} Miles",
         xaxis_title="Year",
-        yaxis_title="Equity Miles",
+        yaxis_title=f"Equity {ref_label} Miles",
         barmode='stack',
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
     )
@@ -492,31 +496,29 @@ def make_recent_months_chart(months_df, this_year, last_year, unit_label):
     return fig
 
 
-def make_equity_monthly_chart(monthly_df, goal=None):
+def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
     """
     Stacked bar chart of equity miles per month for a single year.
+    Only adds traces for sports that have at least one non-zero value.
     Optional dashed monthly goal line.
     """
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        x=monthly_df['month_name'],
-        y=monthly_df['bike'],
-        name='Bike',
-        marker_color=STRAVA_ORANGE,
-    ))
-    fig.add_trace(go.Bar(
-        x=monthly_df['month_name'],
-        y=monthly_df['ski'],
-        name='Ski',
-        marker_color=SKI_BLUE,
-    ))
-    fig.add_trace(go.Bar(
-        x=monthly_df['month_name'],
-        y=monthly_df['swim'],
-        name='Swim',
-        marker_color=SWIM_TEAL,
-    ))
+    _SPORT_COLORS = [
+        ('bike',   STRAVA_ORANGE, 'Bike'),
+        ('run',    RUN_PURPLE,    'Run'),
+        ('ski',    SKI_BLUE,      'Ski'),
+        ('swim',   SWIM_TEAL,     'Swim'),
+        ('hike',   HIKE_GREEN,    'Hike'),
+        ('paddle', PADDLE_CYAN,   'Paddle'),
+        ('custom', CUSTOM_GRAY,   'Custom'),
+    ]
+    for col, color, label in _SPORT_COLORS:
+        if col in monthly_df.columns and monthly_df[col].sum() > 0:
+            fig.add_trace(go.Bar(
+                x=monthly_df['month_name'], y=monthly_df[col],
+                name=label, marker_color=color,
+            ))
 
     if goal and goal > 0:
         fig.add_hline(
@@ -527,9 +529,9 @@ def make_equity_monthly_chart(monthly_df, goal=None):
         )
 
     fig.update_layout(**_base_layout(
-        title="Monthly Equity Miles",
+        title=f"Monthly Equity {ref_label} Miles",
         xaxis_title="Month",
-        yaxis_title="Equity Miles",
+        yaxis_title=f"Equity {ref_label} Miles",
         barmode='stack',
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
     ))

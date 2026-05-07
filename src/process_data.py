@@ -632,59 +632,99 @@ def summarize_stats(df, gear_map=None):
 _EQ_PATTERN = r'^[A-Za-z\[]*[Ee][Qq](\s|\d|$)'
 
 
+def _equity_rates(settings):
+    """
+    Return a dict of per-sport equity conversion rates from settings.
+    The reference sport's stored rate is overridden to 1.0.
+    """
+    from src.config import BIKE_TYPES, RUN_TYPES, HIKE_TYPES, PADDLE_TYPES
+    ref  = settings.get('reference_sport', 'Bike')
+    conv = settings.get('conversions', {})
+    return {
+        'ref':    ref,
+        'bike':   1.0 if ref == 'Bike'   else conv.get('bike_miles_per_ref_unit',   1),
+        'run':    1.0 if ref == 'Run'    else conv.get('run_miles_per_ref_unit',    1),
+        'hike':   1.0 if ref == 'Hike'   else conv.get('hike_miles_per_ref_unit',   3),
+        'paddle': 1.0 if ref == 'Paddle' else conv.get('paddle_miles_per_ref_unit', 2),
+        'swim':   conv.get('swim_meters_per_ref_unit', 100),
+        'ski':    conv.get('ski_vert_per_ref_unit',    1000),
+    }
+
+
 def aggregate_equity_by_year(df, settings):
     """
-    Equity miles per year from ACTUAL activities, broken down by bike / ski / swim.
-    Activities whose names match the *Eq pattern are excluded from all sports —
-    they are the user's manual equity declarations, not actual recorded activities.
+    Equity miles per year, broken down by sport.
+
+    Auto-calculated from actual activities: bike, run, ski, swim, hike, paddle.
+    Custom equity (e.g. GEq gardening): Eq-named activities whose final_type is
+    not a known auto-calculated sport — the activity's distance_miles is taken
+    as the equity declaration directly.
+    Redundant Eq activities (SEq, HEq) are excluded — those sports are now
+    auto-calculated from real activities.
     """
-    swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
-    ski_rate   = settings.get('conversions', {}).get('ski_vert_per_mile', 1000)
-    bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
-    ski_types  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
-    swim_types = ['Swim']
+    from src.config import (BIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES,
+                            HIKE_TYPES, PADDLE_TYPES, EQUITY_SPORT_TYPES)
+    rates = _equity_rates(settings)
 
     df = df.copy()
     df['_is_eq'] = df['name'].str.match(_EQ_PATTERN, na=False)
 
     rows = []
     for year in sorted(df['year'].unique()):
-        y = df[df['year'] == year]
-        bike = y[y['final_type'].isin(bike_types) & ~y['_is_eq']]['distance_miles'].sum()
-        ski  = y[y['final_type'].isin(ski_types)  & ~y['_is_eq']]['elevation_feet'].sum() / ski_rate
-        swim = y[y['final_type'].isin(swim_types) & ~y['_is_eq']]['distance'].sum() / swim_rate
-        rows.append({'year': year, 'bike': bike, 'ski': ski, 'swim': swim,
-                     'total': bike + ski + swim})
+        y    = df[df['year'] == year]
+        real = ~y['_is_eq']
+
+        bike   = y[y['final_type'].isin(BIKE_TYPES)   & real]['distance_miles'].sum()   / rates['bike']
+        run    = y[y['final_type'].isin(RUN_TYPES)    & real]['distance_miles'].sum()   / rates['run']
+        ski    = y[y['final_type'].isin(SKI_TYPES)    & real]['elevation_feet'].sum()   / rates['ski']
+        swim   = y[y['final_type'].isin(SWIM_TYPES)   & real]['distance'].sum()         / rates['swim']
+        hike   = y[y['final_type'].isin(HIKE_TYPES)   & real]['distance_miles'].sum()   / rates['hike']
+        paddle = y[y['final_type'].isin(PADDLE_TYPES) & real]['distance_miles'].sum()   / rates['paddle']
+
+        # Custom equity: Eq-named activities with no native sport type
+        custom = y[y['_is_eq'] & ~y['final_type'].isin(EQUITY_SPORT_TYPES)]['distance_miles'].sum()
+
+        total = bike + run + ski + swim + hike + paddle + custom
+        rows.append({'year': year, 'bike': bike, 'run': run, 'ski': ski,
+                     'swim': swim, 'hike': hike, 'paddle': paddle,
+                     'custom': custom, 'total': total})
     return pd.DataFrame(rows)
 
 
 def aggregate_equity_by_month(df, year, settings):
     """
     Equity miles per month (12 rows, 0-filled) for the given year.
-    Eq-named activities are excluded from all sports — they are manual declarations.
+    Mirrors aggregate_equity_by_year logic at monthly granularity.
     """
     import calendar as cal
-    swim_rate  = settings.get('conversions', {}).get('swim_meters_per_mile', 100)
-    ski_rate   = settings.get('conversions', {}).get('ski_vert_per_mile', 1000)
-    bike_types = ['Ride', 'VirtualRide', 'EBikeRide']
-    ski_types  = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
-    swim_types = ['Swim']
+    from src.config import (BIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES,
+                            HIKE_TYPES, PADDLE_TYPES, EQUITY_SPORT_TYPES)
+    rates = _equity_rates(settings)
 
     y_df = df[df['year'] == year].copy()
     y_df['_is_eq'] = y_df['name'].str.match(_EQ_PATTERN, na=False)
-    y_df['month'] = y_df['start_date_local'].dt.month
+    y_df['month']  = y_df['start_date_local'].dt.month
 
     rows = []
     for m in range(1, 13):
-        mo = y_df[y_df['month'] == m]
-        bike = mo[mo['final_type'].isin(bike_types) & ~mo['_is_eq']]['distance_miles'].sum()
-        ski  = mo[mo['final_type'].isin(ski_types)  & ~mo['_is_eq']]['elevation_feet'].sum() / ski_rate
-        swim = mo[mo['final_type'].isin(swim_types) & ~mo['_is_eq']]['distance'].sum() / swim_rate
+        mo   = y_df[y_df['month'] == m]
+        real = ~mo['_is_eq']
+
+        bike   = mo[mo['final_type'].isin(BIKE_TYPES)   & real]['distance_miles'].sum()  / rates['bike']
+        run    = mo[mo['final_type'].isin(RUN_TYPES)    & real]['distance_miles'].sum()  / rates['run']
+        ski    = mo[mo['final_type'].isin(SKI_TYPES)    & real]['elevation_feet'].sum()  / rates['ski']
+        swim   = mo[mo['final_type'].isin(SWIM_TYPES)   & real]['distance'].sum()        / rates['swim']
+        hike   = mo[mo['final_type'].isin(HIKE_TYPES)   & real]['distance_miles'].sum()  / rates['hike']
+        paddle = mo[mo['final_type'].isin(PADDLE_TYPES) & real]['distance_miles'].sum()  / rates['paddle']
+        custom = mo[mo['_is_eq'] & ~mo['final_type'].isin(EQUITY_SPORT_TYPES)]['distance_miles'].sum()
+
+        total = bike + run + ski + swim + hike + paddle + custom
         rows.append({
             'month': m,
             'month_name': cal.month_abbr[m],
-            'bike': bike, 'ski': ski, 'swim': swim,
-            'total': bike + ski + swim,
+            'bike': bike, 'run': run, 'ski': ski, 'swim': swim,
+            'hike': hike, 'paddle': paddle, 'custom': custom,
+            'total': total,
         })
     return pd.DataFrame(rows)
 
