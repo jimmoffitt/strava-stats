@@ -1,3 +1,13 @@
+"""
+src/setup_tokens.py — One-time Strava OAuth setup script.
+
+Run this interactively before the first pipeline execution to complete the
+OAuth authorization flow: it prints an authorization URL, prompts for the
+returned code, exchanges it for access and refresh tokens, and writes the
+result to data/strava_tokens.json. Requires STRAVA_CLIENT_ID and
+STRAVA_CLIENT_SECRET to be set in .local.env. Only needs to be run once;
+fetch_data.py handles token refresh automatically on all subsequent runs.
+"""
 import requests
 import json
 import os

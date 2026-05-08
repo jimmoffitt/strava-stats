@@ -1,3 +1,12 @@
+"""
+src/publish_data.py — Static image generation for the batch pipeline.
+
+Produces matplotlib table images and Plotly PNG exports written to
+data/images/. Called exclusively by run_pipeline.py as the final stage
+of the batch pipeline. This is the legacy publication path; the live
+dashboard (app.py + charts.py) is the primary interface for interactive
+use. publish_dashboard() is the single entry point called by the pipeline.
+"""
 import os
 import pandas as pd
 import matplotlib.pyplot as plt

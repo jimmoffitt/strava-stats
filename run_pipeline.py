@@ -1,3 +1,13 @@
+"""
+run_pipeline.py — CLI entry point for the batch data pipeline.
+
+Orchestrates the full fetch → process → publish sequence: validates config,
+refreshes the Strava OAuth token, pulls athlete profile and gear data, syncs
+the activity archive for all configured years, processes raw JSON into a
+DataFrame, and generates static PNG outputs via publish_data. Run once for
+initial setup; afterwards use the Sync Now button in the dashboard for
+incremental updates.
+"""
 import sys
 import os
 import json

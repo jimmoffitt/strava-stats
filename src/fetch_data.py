@@ -1,3 +1,13 @@
+"""
+src/fetch_data.py — Strava API client and activity archive manager.
+
+Handles OAuth token refresh (get_access_token), athlete profile and gear
+retrieval, and the persistent activity archive in data/raw/. The key entry
+point is maintain_archive(), which fetches any missing years in full and
+does an incremental update for the current year only — keeping API calls
+minimal on subsequent runs. Called by run_pipeline.py and by app.py's
+Sync Now button.
+"""
 import json
 import time
 import requests

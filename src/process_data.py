@@ -1,4 +1,16 @@
-# src/process_data.py
+"""
+src/process_data.py — Data transformation and aggregation layer.
+
+process_activities() is the main entry point: it converts the raw Strava
+activity list to a DataFrame, adds derived columns (distance_miles,
+elevation_feet, final_type, year), and applies custom categorization for
+equity-marker activity names (SBEq, HEq, GEq, SEq). Aggregation helpers
+— aggregate_by_year/month/iso_week, aggregate_ski_by_season,
+aggregate_swim_by_year/month, aggregate_equity_by_year/month —
+are called directly by app.py tab renderers to feed chart data.
+compute_period_stats() powers the Wrapped and Export tabs with totals,
+streaks, and fun-fact calculations over any arbitrary filtered slice.
+"""
 import re
 import pandas as pd
 from datetime import date, timedelta

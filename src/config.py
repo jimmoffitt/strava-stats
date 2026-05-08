@@ -1,3 +1,12 @@
+"""
+src/config.py — Centralized configuration and constants.
+
+Loads credentials and year targets from .local.env, defines every file path
+used across the project, and declares sport-type lists (BIKE_TYPES, RUN_TYPES,
+SKI_TYPES, etc.) plus the DEFAULT_SETTINGS dict that backs the Settings tab.
+All other modules import from here rather than hardcoding paths or sport lists.
+Call validate_config() at startup to catch missing credentials early.
+"""
 import os
 from dotenv import load_dotenv
 

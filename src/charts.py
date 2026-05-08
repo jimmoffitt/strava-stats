@@ -1,5 +1,13 @@
-# src/charts.py — Plotly figure factories for the Streamlit dashboard
-# Pure functions: no Streamlit calls, each returns go.Figure
+"""
+src/charts.py — Plotly figure factories for the Streamlit dashboard.
+
+Every public function accepts a DataFrame (or simple arrays) and returns a
+go.Figure — no Streamlit calls, making them independently testable and
+reusable in gen_screenshots.py. Call set_theme(dark=True/False) once per
+render cycle (in the sidebar) to switch all subsequent figures between dark
+and light palettes via module-level helpers (_plot_bg, _font_color, etc.).
+_base_layout() is the shared layout builder used by every chart function.
+"""
 
 import plotly.graph_objects as go
 

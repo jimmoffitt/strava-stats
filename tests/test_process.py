@@ -1,3 +1,10 @@
+"""
+tests/test_process.py — Unit tests for process_data aggregation logic.
+
+Placeholder test suite; currently covers a stub for calculate_annual_stats.
+Intended to grow alongside process_data.py as aggregation helpers mature.
+Run with: pytest tests/
+"""
 import pandas as pd
 from process_data import calculate_annual_stats
 

@@ -1,6 +1,12 @@
 """
-Strava Stats — Interactive Streamlit Dashboard
-Multi-tab layout built with Plotly charts.
+app.py — Streamlit dashboard entry point.
+
+Renders the multi-tab Strava Stats UI: Bike, Snow, Swim, Combined (equity),
+Wrapped, Explore, Export, and Settings. Each tab has a dedicated render_*
+function that pulls pre-processed DataFrames from process_data, passes them
+to Plotly figure factories in charts.py, and displays the results with
+st.plotly_chart. Data is loaded once per session via @st.cache_data helpers;
+the sidebar Sync Now button clears the cache and reruns after a live fetch.
 """
 import io
 import json
