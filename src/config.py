@@ -83,6 +83,12 @@ DEFAULT_SETTINGS = {
         'ski_season_vert_ft': 200000,
         'swim_monthly_meters': 10000,
     },
+    'seasons': {
+        'ski_start_month':  11,  # November
+        'ski_end_month':     5,  # May
+        'swim_start_month':  5,  # May
+        'swim_end_month':    9,  # September
+    },
 }
 
 def validate_config():

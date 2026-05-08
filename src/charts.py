@@ -112,7 +112,7 @@ def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=N
     return fig
 
 
-def make_year_time_chart(yearly_df, current_year):
+def make_year_time_chart(yearly_df, current_year, height=220):
     """
     Bar chart of riding hours by year.
     Current year bar uses light tint (YTD); prior years use Strava orange.
@@ -142,12 +142,14 @@ def make_year_time_chart(yearly_df, current_year):
             font=dict(size=10, color=STRAVA_ORANGE_LIGHT),
         )
 
-    fig.update_layout(**_base_layout(
+    layout = _base_layout(
         title="Annual Riding Hours",
         xaxis_title="Year",
         yaxis_title="Hours",
         showlegend=False,
-    ))
+    )
+    layout['height'] = height
+    fig.update_layout(**layout)
     fig.update_xaxes(type='category')
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
@@ -298,7 +300,7 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
         )
 
     layout = _base_layout(
-        title="Annual Distance",
+        title=f"Annual Distance ({y_col})",
         xaxis_title="Year",
         yaxis_title=y_col.capitalize(),
         showlegend=False,

@@ -468,19 +468,58 @@ def render_bike_tab(bike_df, gear_map):
     ]
     filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
 
-    # --- Stats box (Year mode — before the hours chart) ---
+    yearly_all = process_data.aggregate_by_year(filtered_df)
+
+    # --- Year mode: selector + two stats boxes + monthly chart ---
     if time_mode == "Year":
-        yearly = process_data.aggregate_by_year(filtered_df)
-        if not yearly.empty:
-            max_ride = filtered_df['distance_miles'].max() if not filtered_df.empty else 0
-            dist_val = f"{yearly['miles'].sum():,.0f} mi" if dist_col == 'miles' else f"{yearly['km'].sum():,.0f} km"
-            max_val  = f"{max_ride:,.1f} mi" if dist_col == 'miles' else f"{max_ride * 1.60934:,.1f} km"
+        available_years = sorted(filtered_df['year'].unique().tolist(), reverse=True) if not filtered_df.empty else []
+
+        # Seed session state to avoid index=/key= conflict
+        _cur_by = st.session_state.get('bike_year')
+        if _cur_by not in available_years:
+            st.session_state['bike_year'] = available_years[0] if available_years else None
+
+        selected_year = st.selectbox("Year", available_years, key="bike_year")
+
+        if selected_year is not None and not yearly_all.empty:
+            yr_row = yearly_all[yearly_all['year'] == selected_year]
+            max_ride = filtered_df[filtered_df['year'] == selected_year]['distance_miles'].max() \
+                       if not filtered_df[filtered_df['year'] == selected_year].empty else 0
+
+            if not yr_row.empty:
+                r = yr_row.iloc[0]
+                yr_dist = f"{r['miles']:,.0f} mi" if dist_col == 'miles' else f"{r['km']:,.0f} km"
+                yr_max  = f"{max_ride:,.1f} mi" if dist_col == 'miles' else f"{max_ride * 1.60934:,.1f} km"
+                _stats_box([
+                    (f"{selected_year} Distance", yr_dist),
+                    ("Longest Ride",              yr_max),
+                    ("Hours",                     f"{r['hours']:,.0f} h"),
+                    ("Rides",                     f"{int(r['count']):,}"),
+                ])
+
+            # All-time stats box
+            all_max = filtered_df['distance_miles'].max() if not filtered_df.empty else 0
+            all_avg = filtered_df['distance_miles'].mean() if not filtered_df.empty else 0
+            all_dist = f"{yearly_all['miles'].sum():,.0f} mi" if dist_col == 'miles' \
+                       else f"{yearly_all['km'].sum():,.0f} km"
+            all_max_val = f"{all_max:,.1f} mi" if dist_col == 'miles' \
+                          else f"{all_max * 1.60934:,.1f} km"
+            all_avg_val = f"{all_avg:,.1f} mi" if dist_col == 'miles' \
+                          else f"{all_avg * 1.60934:,.1f} km"
             _stats_box([
-                ("Total Distance",   dist_val),
-                ("Longest Ride",     max_val),
-                ("Total Hours",      f"{yearly['hours'].sum():,.0f} h"),
-                ("Total Activities", f"{int(yearly['count'].sum()):,}"),
+                ("All-Time Distance",    all_dist),
+                ("All-Time Hours",       f"{yearly_all['hours'].sum():,.0f} h"),
+                ("All-Time Rides",       f"{int(yearly_all['count'].sum()):,}"),
+                ("Longest Ride (ever)",  all_max_val),
+                ("Avg Ride Distance",    all_avg_val),
             ])
+
+            # Distance by Month chart for selected year
+            monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
+            st.plotly_chart(
+                make_monthly_chart(monthly_bike, dist_col, dist_label),
+                use_container_width=True,
+            )
 
     # --- Dispatch to view ---
     if time_mode == "Year":
@@ -522,30 +561,45 @@ def render_ski_tab(ski_df, settings):
     goal_vert = settings['goals']['ski_season_vert_ft']
     conv = settings['conversions']
     ski_vert_per_mile = conv.get('ski_vert_per_ref_unit', conv.get('ski_vert_per_mile', 1000))
+    seasons_cfg = settings.get('seasons', {})
+    ski_start = seasons_cfg.get('ski_start_month', 11)
+    ski_end   = seasons_cfg.get('ski_end_month', 5)
 
     today = date.today()
     current_season_key = today.year if today.month >= 10 else today.year - 1
 
     seasonal_df = process_data.aggregate_ski_by_season(ski_df)
 
-    # --- 1. Thin all-seasons chart ---
+    # --- 1. Thin all-seasons overview chart ---
     st.plotly_chart(
         make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220),
         use_container_width=True,
     )
 
-    # --- 2. Season selector ---
-    season_labels = seasonal_df['season_label'].tolist()[::-1]
+    # --- 2. Season selector (e.g. "2025-2026") ---
+    # season_key is the start year; season_label is the full "YYYY-YYYY" string.
     season_keys   = seasonal_df['season_key'].tolist()[::-1]
-    default_idx   = season_keys.index(current_season_key) if current_season_key in season_keys else 0
-    selected_label = st.selectbox("Season", season_labels, index=default_idx, key="ski_season",
-                                   on_change=_active_tab_setter("Snow"))
-    selected_key   = season_keys[season_labels.index(selected_label)]
+    season_labels = seasonal_df['season_label'].tolist()[::-1]
+    label_to_key  = dict(zip(season_labels, season_keys))
 
-    # --- 3. Season stats box ---
+    # Seed session state to avoid index= / key= conflict on re-render
+    _cur_ski = st.session_state.get('ski_season_sel')
+    if _cur_ski not in season_labels:
+        default_label = next(
+            (lbl for lbl, k in zip(season_labels, season_keys) if k == current_season_key),
+            season_labels[0],
+        )
+        st.session_state['ski_season_sel'] = default_label
+
+    selected_label = st.selectbox(
+        "Season", season_labels, key="ski_season_sel",
+        on_change=_active_tab_setter("Snow"),
+    )
+    selected_key = label_to_key[selected_label]
+
+    # --- 3. Stats box ---
     row = seasonal_df[seasonal_df['season_key'] == selected_key].iloc[0]
     equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
-
     _stats_box([
         ("Days on snow",   str(int(row['days']))),
         ("Sessions",       str(int(row['sessions']))),
@@ -558,7 +612,33 @@ def render_ski_tab(ski_df, settings):
         progress = min(row['vert_ft'] / goal_vert, 1.0)
         st.progress(progress, text=f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({progress*100:.0f}%)")
 
-    # --- 4. Most Recent Snow Activities ---
+    # All-time stats box
+    best_season_row = seasonal_df.loc[seasonal_df['vert_ft'].idxmax()]
+    all_vert      = seasonal_df['vert_ft'].sum()
+    all_days      = int(seasonal_df['days'].sum())
+    all_sessions  = int(seasonal_df['sessions'].sum())
+    all_seasons   = len(seasonal_df)
+    all_eq_miles  = all_vert / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
+    _stats_box([
+        ("All-Time Seasons",   str(all_seasons)),
+        ("All-Time Vert",      f"{all_vert:,.0f} ft"),
+        ("All-Time Days",      str(all_days)),
+        ("All-Time Sessions",  str(all_sessions)),
+        ("Best Season",        f"{best_season_row['season_label']}  {best_season_row['vert_ft']:,.0f} ft"),
+        ("All-Time Eq Miles",  f"{all_eq_miles:,.0f} mi"),
+    ])
+
+    # --- 4. Vert by Month chart (season months, spanning both calendar years) ---
+    monthly_season = process_data.aggregate_ski_season_by_month(
+        ski_df, selected_key, start_month=ski_start, end_month=ski_end,
+    )
+    if not monthly_season.empty:
+        st.plotly_chart(
+            make_monthly_chart(monthly_season, 'vert_ft', 'ft'),
+            use_container_width=True,
+        )
+
+    # --- 5. Most Recent Snow Activities ---
     st.divider()
     _render_recent_table(
         ski_df,
@@ -567,7 +647,7 @@ def render_ski_tab(ski_df, settings):
         key_prefix="ski",
     )
 
-    # --- 5. Biggest Snow Days (All Seasons) ---
+    # --- 6. Biggest Snow Days (All Seasons) ---
     st.divider()
     _render_longest_table(
         ski_df, 'elevation_feet',
@@ -575,22 +655,22 @@ def render_ski_tab(ski_df, settings):
         "Biggest Snow Days (All Seasons)",
     )
 
-    # --- 6. All Snow Days (reverse chronological) ---
+    # --- 7. All Snow Days (reverse chronological) ---
     st.divider()
     st.subheader("Snow Days")
-    all_days = process_data.get_ski_days_table(ski_df)  # all seasons
+    all_days = process_data.get_ski_days_table(ski_df)
     if all_days.empty:
         st.info("No snow days found.")
         return
 
     display = all_days.copy()
-    display['Date']        = pd.to_datetime(display['date']).apply(_fmt_date_long)
-    display['Season']      = display['season_label']
-    display['Activity']    = display['activity']
-    display['Type']        = display['type']
-    display['Vert (ft)']   = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
-    display['Dist (mi)']   = display['distance_mi'].apply(lambda x: f"{x:.1f}")
-    display['Hours']       = display['hours'].apply(lambda x: f"{x:.1f}")
+    display['Date']      = pd.to_datetime(display['date']).apply(_fmt_date_long)
+    display['Season']    = display['season_label']
+    display['Activity']  = display['activity']
+    display['Type']      = display['type']
+    display['Vert (ft)'] = display['vert_ft'].apply(lambda x: f"{x:,.0f}")
+    display['Dist (mi)'] = display['distance_mi'].apply(lambda x: f"{x:.1f}")
+    display['Hours']     = display['hours'].apply(lambda x: f"{x:.1f}")
     st.dataframe(
         display[['Date', 'Season', 'Activity', 'Type', 'Vert (ft)', 'Dist (mi)', 'Hours']],
         width="stretch",
@@ -623,6 +703,9 @@ def render_swim_tab(swim_df, settings, df=None):
         return
 
     monthly_goal_m = settings['goals']['swim_monthly_meters']
+    seasons = settings.get('seasons', {})
+    swim_start = seasons.get('swim_start_month', 5)
+    swim_end   = seasons.get('swim_end_month', 9)
     current_year = date.today().year
 
     # --- 1. Thin multi-year overview chart ---
@@ -651,7 +734,19 @@ def render_swim_tab(swim_df, settings, df=None):
     mult       = 1.0 if unit == 'Meters' else 1.09361
     goal_val   = monthly_goal_m * mult
 
-    monthly = process_data.aggregate_swim_by_month(swim_df, selected_year)
+    monthly_all = process_data.aggregate_swim_by_month(swim_df, selected_year)
+    if swim_start <= swim_end:
+        swim_months = list(range(swim_start, swim_end + 1))
+    else:
+        swim_months = list(range(swim_start, 13)) + list(range(1, swim_end + 1))
+    _swim_order = {m: i for i, m in enumerate(swim_months)}
+    monthly = (
+        monthly_all[monthly_all['month'].isin(swim_months)]
+        .copy()
+        .assign(_order=lambda d: d['month'].map(_swim_order))
+        .sort_values('_order')
+        .drop(columns='_order')
+    )
 
     # --- 3. Stats bar (under controls, before charts) ---
     year_row = yearly[yearly['year'] == selected_year]
@@ -675,6 +770,20 @@ def render_swim_tab(swim_df, settings, df=None):
             progress = min(avg_monthly / goal_val, 1.0)
             st.progress(progress,
                 text=f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)")
+
+        # All-time stats box
+        all_dist_m   = yearly['meters'].sum()
+        all_swims    = int(yearly['swims'].sum())
+        best_yr_row  = yearly.loc[yearly['meters'].idxmax()]
+        all_max_swim = swim_df['distance'].max() * mult if not swim_df.empty else 0
+        all_avg_swim = (all_dist_m / all_swims * mult) if all_swims else 0
+        _stats_box([
+            ("All-Time Distance", f"{all_dist_m * mult:,.0f} {dist_label}"),
+            ("All-Time Swims",    str(all_swims)),
+            ("Best Year",         f"{int(best_yr_row['year'])}  {best_yr_row['meters'] * mult:,.0f} {dist_label}"),
+            ("Longest Swim",      f"{all_max_swim:,.0f} {dist_label}"),
+            ("Avg per Swim",      f"{all_avg_swim:,.0f} {dist_label}"),
+        ])
 
     # --- 4. Monthly chart ---
     st.plotly_chart(
@@ -738,6 +847,18 @@ def render_equity_tab(df, settings):
             if val > 0.5:
                 sport_items.append((label, f"{val:,.0f} mi{pct(val)}"))
     _stats_box(sport_items)
+
+    # All-time stats box
+    all_total = yearly['total'].sum()
+    all_items = [("All-Time Equity Miles", f"{all_total:,.0f}")]
+    for col, label in [('bike','Bike'), ('run','Run'), ('ski','Ski'), ('swim','Swim'),
+                       ('hike','Hike'), ('paddle','Paddle'), ('custom','Custom')]:
+        if col in yearly.columns:
+            all_val = yearly[col].sum()
+            if all_val > 0.5:
+                all_pct = f" ({all_val / all_total * 100:.0f}%)" if all_total else ""
+                all_items.append((label, f"{all_val:,.0f} mi{all_pct}"))
+    _stats_box(all_items)
 
     if annual_goal:
         prog = min(total_eq / annual_goal, 1.0)
@@ -1575,18 +1696,35 @@ def render_settings_tab(settings):
 
     # --- Reference Sport ---
     st.subheader("Reference Sport")
-    st.caption("All equity miles are expressed in units of this sport.")
-    ref_options = ["Bike", "Run"]
-    # Seed session state from saved settings only on the very first render for
-    # this key — after that, the radio widget owns its own state and we must
-    # not pass `index` (which would conflict with session state on re-renders).
-    if 'settings_ref_sport' not in st.session_state:
-        st.session_state['settings_ref_sport'] = settings.get('reference_sport', 'Bike')
+    st.caption(
+        "Equity miles are expressed in units of this sport. "
+        "Bike, Run, and Hike all use distance (miles) so they can serve as the "
+        "reference. Swim and Ski use different native units (meters / vertical "
+        "feet) — their conversion rates below always express how many native "
+        "units equal one equity mile."
+    )
+
+    ref_options = ["Bike", "Run", "Hike"]
+    # Seed session state before the radio renders. If saved value is not in the
+    # current option list (e.g. stale 'Paddle' from an older version), reset to
+    # 'Bike'. Never pass index= alongside key= — that combo crashes on re-render.
+    _cur = st.session_state.get('settings_ref_sport')
+    if _cur not in ref_options:
+        saved_ref = settings.get('reference_sport', 'Bike')
+        st.session_state['settings_ref_sport'] = saved_ref if saved_ref in ref_options else 'Bike'
     ref_sport = st.radio(
         "Reference sport", ref_options,
         horizontal=True,
         key="settings_ref_sport",
     )
+
+    saved_ref = settings.get('reference_sport', 'Bike')
+    if ref_sport != saved_ref:
+        st.warning(
+            f"Reference sport changed from **{saved_ref}** to **{ref_sport}**. "
+            "Review the conversion rates below to make sure they still reflect "
+            "your effort equivalences, then hit Save."
+        )
 
     st.divider()
 
@@ -1594,55 +1732,57 @@ def render_settings_tab(settings):
     st.subheader("Equity Mile Conversions")
     st.caption(f"How many native units = 1 {ref_sport} equity mile.")
 
-    # Distance sports — 4 columns
+    # Distance sports: 4 columns. Reference sport shows a static label (no
+    # number_input). Paddle is never a reference sport so always gets an input.
+    # Explicit per-sport blocks avoid session-state conflicts that occur when
+    # conditional rendering happens inside a loop.
     dcol_bike, dcol_run, dcol_hike, dcol_paddle = st.columns(4)
 
     with dcol_bike:
         st.markdown("**Bike**")
         if ref_sport == 'Bike':
-            st.caption("Reference — always 1.0")
-        _bike_input = st.number_input(
-            "miles = 1 equity mi",
-            min_value=0.1, max_value=100.0,
-            value=float(conv.get('bike_miles_per_ref_unit', 1)),
-            step=0.5, format="%.1f",
-            key="settings_bike_rate",
-            disabled=(ref_sport == 'Bike'),
-        )
-        bike_rate = 1.0 if ref_sport == 'Bike' else _bike_input
+            st.caption("Reference")
+            st.markdown("1 mi = 1 equity mi")
+            bike_rate = 1.0
+        else:
+            bike_rate = st.number_input(
+                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                value=float(conv.get('bike_miles_per_ref_unit', 1.0)),
+                step=0.5, format="%.1f", key="settings_bike_rate",
+            )
 
     with dcol_run:
         st.markdown("**Run**")
         if ref_sport == 'Run':
-            st.caption("Reference — always 1.0")
-        _run_input = st.number_input(
-            "miles = 1 equity mi",
-            min_value=0.1, max_value=100.0,
-            value=float(conv.get('run_miles_per_ref_unit', 1)),
-            step=0.5, format="%.1f",
-            key="settings_run_rate",
-            disabled=(ref_sport == 'Run'),
-        )
-        run_rate = 1.0 if ref_sport == 'Run' else _run_input
+            st.caption("Reference")
+            st.markdown("1 mi = 1 equity mi")
+            run_rate = 1.0
+        else:
+            run_rate = st.number_input(
+                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                value=float(conv.get('run_miles_per_ref_unit', 1.0)),
+                step=0.5, format="%.1f", key="settings_run_rate",
+            )
 
     with dcol_hike:
         st.markdown("**Hike / Walk**")
-        hike_rate = st.number_input(
-            "miles = 1 equity mi",
-            min_value=0.1, max_value=100.0,
-            value=float(conv.get('hike_miles_per_ref_unit', 3)),
-            step=0.5, format="%.1f",
-            key="settings_hike_rate",
-        )
+        if ref_sport == 'Hike':
+            st.caption("Reference")
+            st.markdown("1 mi = 1 equity mi")
+            hike_rate = 1.0
+        else:
+            hike_rate = st.number_input(
+                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                value=float(conv.get('hike_miles_per_ref_unit', 3.0)),
+                step=0.5, format="%.1f", key="settings_hike_rate",
+            )
 
     with dcol_paddle:
         st.markdown("**Paddle**")
         paddle_rate = st.number_input(
-            "miles = 1 equity mi",
-            min_value=0.1, max_value=100.0,
-            value=float(conv.get('paddle_miles_per_ref_unit', 2)),
-            step=0.5, format="%.1f",
-            key="settings_paddle_rate",
+            "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+            value=float(conv.get('paddle_miles_per_ref_unit', 2.0)),
+            step=0.5, format="%.1f", key="settings_paddle_rate",
         )
 
     # Non-distance sports — 2 columns
@@ -1713,6 +1853,47 @@ def render_settings_tab(settings):
 
     st.divider()
 
+    # --- Season Months ---
+    st.subheader("Season Months")
+    st.caption("Controls which months appear in the monthly chart on each sport tab.")
+
+    _month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    _month_nums  = list(range(1, 13))
+    saved_seasons = settings.get('seasons', {})
+
+    smcol_ski, smcol_swim = st.columns(2)
+    with smcol_ski:
+        st.markdown("**Ski season**")
+        ski_start_m = st.selectbox(
+            "Start month", _month_nums,
+            index=_month_nums.index(saved_seasons.get('ski_start_month', 11)),
+            format_func=lambda m: _month_names[m - 1],
+            key="settings_ski_start_month",
+        )
+        ski_end_m = st.selectbox(
+            "End month", _month_nums,
+            index=_month_nums.index(saved_seasons.get('ski_end_month', 5)),
+            format_func=lambda m: _month_names[m - 1],
+            key="settings_ski_end_month",
+        )
+    with smcol_swim:
+        st.markdown("**Swim season**")
+        swim_start_m = st.selectbox(
+            "Start month", _month_nums,
+            index=_month_nums.index(saved_seasons.get('swim_start_month', 5)),
+            format_func=lambda m: _month_names[m - 1],
+            key="settings_swim_start_month",
+        )
+        swim_end_m = st.selectbox(
+            "End month", _month_nums,
+            index=_month_nums.index(saved_seasons.get('swim_end_month', 9)),
+            format_func=lambda m: _month_names[m - 1],
+            key="settings_swim_end_month",
+        )
+
+    st.divider()
+
     if st.button("Save settings", type="primary"):
         updated = {
             'reference_sport': ref_sport,
@@ -1729,6 +1910,12 @@ def render_settings_tab(settings):
                 'monthly_equity_miles': monthly_eq,
                 'ski_season_vert_ft':   ski_goal,
                 'swim_monthly_meters':  swim_goal,
+            },
+            'seasons': {
+                'ski_start_month':  ski_start_m,
+                'ski_end_month':    ski_end_m,
+                'swim_start_month': swim_start_m,
+                'swim_end_month':   swim_end_m,
             },
         }
         with open(config.SETTINGS_FILE, 'w') as f:
@@ -1763,8 +1950,8 @@ swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 render_sync_sidebar()
 
 # TODO: restore tab_trends and "Trends" when work on the Trends tab continues
-tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_explore, tab_export, tab_settings = st.tabs(
-    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Explore", "Export", "Settings"],
+tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_settings, tab_tools = st.tabs(
+    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Settings", "Tools"],
     default=st.session_state.get('active_tab'),
 )
 
@@ -1783,11 +1970,12 @@ with tab_swim:
 with tab_wrapped:
     render_wrapped_tab(df, settings, athlete_profile)
 
-with tab_explore:
-    render_explore_tab(df, gear_map)
-
-with tab_export:
-    render_export_tab(df, settings)
-
 with tab_settings:
     render_settings_tab(settings)
+
+with tab_tools:
+    tools_explore, tools_export = st.tabs(["Explore", "Export"])
+    with tools_explore:
+        render_explore_tab(df, gear_map)
+    with tools_export:
+        render_export_tab(df, settings)

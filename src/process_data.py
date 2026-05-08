@@ -450,8 +450,98 @@ def aggregate_ski_by_season(ski_df):
     agg['avg_vert_day'] = agg.apply(
         lambda r: r['vert_ft'] / r['days'] if r['days'] > 0 else 0, axis=1
     )
-    agg['season_label'] = agg['season_key'].apply(lambda y: f"{y}-{str(y + 1)[-2:]}")
+    agg['season_label'] = agg['season_key'].apply(lambda y: f"{y}-{y + 1}")
     return agg
+
+
+def aggregate_ski_by_month(ski_df, year):
+    """
+    Returns monthly vert-ft data for all 12 months of the given calendar year.
+    Columns: month, month_name, sessions, vert_ft.
+    Months with no ski activity are filled with 0.
+    """
+    import calendar as cal
+    df = ski_df.copy()
+    df['month'] = df['start_date_local'].dt.month
+    mask = df['start_date_local'].dt.year == year
+    agg = (
+        df[mask].groupby('month')
+        .agg(sessions=('id', 'count'), vert_ft=('elevation_feet', 'sum'))
+        .reset_index()
+    )
+    all_months = pd.DataFrame({
+        'month':      range(1, 13),
+        'month_name': [cal.month_abbr[m] for m in range(1, 13)],
+    })
+    result = all_months.merge(agg, on='month', how='left').fillna(0)
+    result['month']    = result['month'].astype(int)
+    result['sessions'] = result['sessions'].astype(int)
+    return result
+
+
+def aggregate_ski_season_by_month(ski_df, season_key, start_month=11, end_month=5):
+    """
+    Returns monthly vert-ft data for a ski season spanning two calendar years.
+    season_key is the start year (e.g. 2025 = 2025-2026 season).
+    Handles wrap-around: months >= start_month belong to season_key year,
+    months <= end_month belong to season_key+1 year.
+    Columns: month, month_name, sessions, vert_ft (in season order).
+    """
+    import calendar as cal
+    df = ski_df.copy()
+    df['_year']  = df['start_date_local'].dt.year
+    df['_month'] = df['start_date_local'].dt.month
+
+    if start_month > end_month:
+        pairs = [(season_key, m) for m in range(start_month, 13)] + \
+                [(season_key + 1, m) for m in range(1, end_month + 1)]
+    else:
+        pairs = [(season_key, m) for m in range(start_month, end_month + 1)]
+
+    rows = []
+    for y, m in pairs:
+        group = df[(df['_year'] == y) & (df['_month'] == m)]
+        rows.append({
+            'month':      m,
+            'month_name': cal.month_abbr[m],
+            'sessions':   len(group),
+            'vert_ft':    group['elevation_feet'].sum() if not group.empty else 0.0,
+        })
+    return pd.DataFrame(rows)
+
+
+def aggregate_bike_by_month(bike_df, year):
+    """
+    Returns monthly distance/hours/count data for the given calendar year.
+    Columns: month, month_name, miles, km, hours, count.
+    Months with no rides filled with 0.
+    """
+    import calendar as cal
+    df = bike_df.copy()
+    df['_month'] = df['start_date_local'].dt.month
+    df['hours']  = df['moving_time'] / 3600.0
+    df['km']     = df['distance'] / 1000.0
+
+    mask = df['start_date_local'].dt.year == year
+    agg = (
+        df[mask].groupby('_month')
+        .agg(
+            miles=('distance_miles', 'sum'),
+            km=('km', 'sum'),
+            hours=('hours', 'sum'),
+            count=('id', 'count'),
+        )
+        .reset_index()
+        .rename(columns={'_month': 'month'})
+    )
+    all_months = pd.DataFrame({
+        'month':      range(1, 13),
+        'month_name': [cal.month_abbr[m] for m in range(1, 13)],
+    })
+    result = all_months.merge(agg, on='month', how='left').fillna(0)
+    result['month'] = result['month'].astype(int)
+    result['count'] = result['count'].astype(int)
+    return result
 
 
 def get_ski_days_table(ski_df, season_key=None):
