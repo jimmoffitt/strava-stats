@@ -17,6 +17,7 @@ from datetime import date, datetime as _datetime, timedelta
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as _components
 
 from src import config, process_data
 from src import charts as _charts_mod
@@ -154,7 +155,7 @@ def _fmt_date_long(dt):
 
 def _stats_box(items):
     """Compact horizontal stats strip. items = list of (label, value) tuples."""
-    dark = st.session_state.get('dark_mode', False)
+    dark = st.context.theme.type == 'dark'
     bg          = '#2a2d35' if dark else '#f7f7f7'
     label_color = '#9ca3af' if dark else '#888'
     value_color = '#e8e8e8' if dark else '#222'
@@ -178,32 +179,26 @@ def _stats_box(items):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def _inject_theme_css(dark: bool) -> None:
-    if dark:
-        css = """
-        <style>
-        .stApp, [data-testid="stAppViewContainer"] {
-            background-color: #0e1117;
-            color: #e8e8e8;
-        }
-        [data-testid="stSidebar"] { background-color: #1a1c24; }
-        [data-testid="stHeader"]  { background-color: #0e1117; }
-        .stMarkdown p, .stMarkdown li { color: #e8e8e8; }
-        </style>
-        """
-    else:
-        css = """
-        <style>
-        .stApp, [data-testid="stAppViewContainer"] {
-            background-color: #ffffff;
-            color: #31333F;
-        }
-        [data-testid="stSidebar"] { background-color: #f0f2f6; }
-        [data-testid="stHeader"]  { background-color: #ffffff; }
-        .stMarkdown p, .stMarkdown li { color: #31333F; }
-        </style>
-        """
-    st.markdown(css, unsafe_allow_html=True)
+def _apply_theme_js(theme: str) -> None:
+    """Push a theme preference ('dark' or 'light') into Streamlit's localStorage
+    and reload the parent page so Streamlit picks it up natively.  Only triggers
+    a reload when the cached theme doesn't already match the requested one."""
+    name = 'Dark' if theme == 'dark' else 'Light'
+    js = f"""
+    <script>
+    (function() {{
+        var key = 'stActiveTheme-' + window.parent.location.pathname + '-v1';
+        var raw = window.parent.localStorage.getItem(key);
+        var cur = null;
+        try {{ cur = JSON.parse(raw).name; }} catch(e) {{}}
+        if (cur !== '{name}') {{
+            window.parent.localStorage.setItem(key, JSON.stringify({{name: '{name}'}}));
+            window.parent.location.reload();
+        }}
+    }})();
+    </script>
+    """
+    _components.html(js, height=0, scrolling=False)
 
 
 def _active_tab_setter(name):
@@ -1653,13 +1648,7 @@ def _run_sync():
 
 def render_sync_sidebar():
     with st.sidebar:
-        dark_mode = st.toggle(
-            "Dark mode",
-            value=st.session_state.get('dark_mode', False),
-            key='dark_mode',
-        )
-        _charts_mod.set_theme(dark_mode)
-        _inject_theme_css(dark_mode)
+        _charts_mod.set_theme(st.context.theme.type == 'dark')
 
         st.divider()
         st.header("Data Sync")
@@ -1697,6 +1686,22 @@ def render_sync_sidebar():
 def render_settings_tab(settings):
     conv  = settings.get('conversions', {})
     goals = settings.get('goals', {})
+
+    # --- Theme ---
+    st.subheader("Theme")
+    theme_options = ['dark', 'light']
+    _cur_theme = st.session_state.get('settings_theme')
+    if _cur_theme not in theme_options:
+        st.session_state['settings_theme'] = settings.get('theme', 'dark')
+    new_theme = st.radio(
+        "Appearance", theme_options,
+        horizontal=True,
+        format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
+        key='settings_theme',
+    )
+    st.caption("Takes effect immediately on save.")
+
+    st.divider()
 
     # --- Reference Sport ---
     st.subheader("Reference Sport")
@@ -1899,7 +1904,9 @@ def render_settings_tab(settings):
     st.divider()
 
     if st.button("Save settings", type="primary"):
+        old_theme = settings.get('theme', 'dark')
         updated = {
+            'theme': new_theme,
             'reference_sport': ref_sport,
             'conversions': {
                 'bike_miles_per_ref_unit':   bike_rate,
@@ -1925,8 +1932,12 @@ def render_settings_tab(settings):
         with open(config.SETTINGS_FILE, 'w') as f:
             json.dump(updated, f, indent=2)
         load_settings.clear()
-        st.success("Settings saved.")
-        st.rerun()
+        if new_theme != old_theme:
+            # JS reload applies the new Streamlit theme and picks up new settings.json
+            _apply_theme_js(new_theme)
+        else:
+            st.success("Settings saved.")
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -1952,6 +1963,16 @@ ski_df   = df[df['final_type'].isin(SKI_TYPES)  & ~_eq_mask].copy()
 swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 
 render_sync_sidebar()
+
+# On first render of each browser session, sync localStorage to the saved theme
+# preference.  Subsequent renders skip this (initial_theme_synced is set) so
+# that the user can still override via Streamlit's native ⋮ Settings menu.
+if not st.session_state.get('initial_theme_synced'):
+    st.session_state['initial_theme_synced'] = True
+    _saved_theme = settings.get('theme', 'dark')
+    _current_theme = st.context.theme.type or 'dark'
+    if _saved_theme != _current_theme:
+        _apply_theme_js(_saved_theme)
 
 # TODO: restore tab_trends and "Trends" when work on the Trends tab continues
 _TAB_NAMES = ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Settings", "Tools"]

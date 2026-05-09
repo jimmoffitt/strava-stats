@@ -65,6 +65,7 @@ ATHLETE_STATS_FILE   = os.path.join(DATA_DIR, 'athlete_stats.json')
 
 # Defaults used when settings.json doesn't exist yet
 DEFAULT_SETTINGS = {
+    'theme': 'dark',
     'reference_sport': 'Bike',
     'conversions': {
         # Distance sports: X miles of this sport = 1 equity unit
