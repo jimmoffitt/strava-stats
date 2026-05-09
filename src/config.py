@@ -90,6 +90,11 @@ DEFAULT_SETTINGS = {
         'swim_start_month':  5,  # May
         'swim_end_month':    9,  # September
     },
+    'home_location': {
+        'enabled': False,
+        'lat': None,
+        'lon': None,
+    },
 }
 
 def validate_config():

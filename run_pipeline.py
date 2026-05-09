@@ -63,6 +63,7 @@ def main():
         
         print("Publishing assets...")
         publish_data.publish_dashboard(summary, df, config.IMAGES_DIR)
+        publish_data.generate_bike_heatmap_png(config.ACTIVITIES_FILE, config.IMAGES_DIR)
     else:
         print("No activities found for the requested years.")
 

@@ -523,7 +523,11 @@ def render_bike_heatmap_view(compact: bool = False):
         st.info("No rides in the selected window.")
         return
 
-    center_lat, center_lon = _median_center(routes)
+    _home = load_settings().get('home_location', {})
+    if _home.get('enabled') and _home.get('lat') is not None and _home.get('lon') is not None:
+        center_lat, center_lon = float(_home['lat']), float(_home['lon'])
+    else:
+        center_lat, center_lon = _median_center(routes)
     height = 290 if compact else 560
     st.caption(f"{len(routes):,} rides")
     st.plotly_chart(
@@ -536,9 +540,9 @@ def render_bike_tab(bike_df, gear_map):
     current_year = date.today().year
     yearly_all = process_data.aggregate_by_year(bike_df)
 
-    # --- Top row: annual distance chart (left) + compact heatmap eye-candy (right) ---
-    chart_col, map_col = st.columns([3, 2])
-    with chart_col:
+    # --- Top row: annual distance chart (left) + static heatmap thumbnail (right) ---
+    _chart_col, _thumb_col = st.columns([3, 1])
+    with _chart_col:
         if not yearly_all.empty:
             _unit = st.session_state.get('bike_unit', 'Miles')
             _dc, _dl = ('miles', 'Miles') if _unit == 'Miles' else ('km', 'Km')
@@ -546,8 +550,10 @@ def render_bike_tab(bike_df, gear_map):
                 make_year_dist_chart(yearly_all, _dc, _dl, current_year, height=220),
                 use_container_width=True,
             )
-    with map_col:
-        render_bike_heatmap_view(compact=True)
+    with _thumb_col:
+        _static_map_path = os.path.join(config.IMAGES_DIR, 'bike_heat_map_all_time.png')
+        if os.path.exists(_static_map_path):
+            st.image(_static_map_path, use_container_width=True)
 
     # --- Controls row ---
     ctrl_l, ctrl_r = st.columns(2)
@@ -658,6 +664,9 @@ def render_bike_tab(bike_df, gear_map):
     for i, gid in enumerate(gear_ids):
         label = gear_map.get(gid, gid) if gid else "Unknown Bike"
         gear_cols[i % len(gear_cols)].checkbox(label, value=True, key=f"bike_gear_{gid}")
+
+    st.divider()
+    render_bike_heatmap_view(compact=False)
 
 
 # ---------------------------------------------------------------------------
@@ -1793,257 +1802,288 @@ def render_sync_sidebar():
 # Settings tab
 # ---------------------------------------------------------------------------
 def render_settings_tab(settings):
-    conv  = settings.get('conversions', {})
-    goals = settings.get('goals', {})
-
-    # --- Theme ---
-    st.subheader("Theme")
-    theme_options = ['dark', 'light']
-    _cur_theme = st.session_state.get('settings_theme')
-    if _cur_theme not in theme_options:
-        st.session_state['settings_theme'] = settings.get('theme', 'dark')
-    new_theme = st.radio(
-        "Appearance", theme_options,
-        horizontal=True,
-        format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
-        key='settings_theme',
-    )
-    st.caption("Takes effect immediately on save.")
-
-    st.divider()
-
-    # --- Reference Sport ---
-    st.subheader("Reference Sport")
-    st.caption(
-        "Equity miles are expressed in units of this sport. "
-        "Bike, Run, and Hike all use distance (miles) so they can serve as the "
-        "reference. Swim and Ski use different native units (meters / vertical "
-        "feet) — their conversion rates below always express how many native "
-        "units equal one equity mile."
-    )
-
-    ref_options = ["Bike", "Run", "Hike"]
-    # Seed session state before the radio renders. If saved value is not in the
-    # current option list (e.g. stale 'Paddle' from an older version), reset to
-    # 'Bike'. Never pass index= alongside key= — that combo crashes on re-render.
-    _cur = st.session_state.get('settings_ref_sport')
-    if _cur not in ref_options:
-        saved_ref = settings.get('reference_sport', 'Bike')
-        st.session_state['settings_ref_sport'] = saved_ref if saved_ref in ref_options else 'Bike'
-    ref_sport = st.radio(
-        "Reference sport", ref_options,
-        horizontal=True,
-        key="settings_ref_sport",
-    )
-
-    saved_ref = settings.get('reference_sport', 'Bike')
-    if ref_sport != saved_ref:
-        st.warning(
-            f"Reference sport changed from **{saved_ref}** to **{ref_sport}**. "
-            "Review the conversion rates below to make sure they still reflect "
-            "your effort equivalences, then hit Save."
-        )
-
-    st.divider()
-
-    # --- Conversion Rates ---
-    st.subheader("Equity Mile Conversions")
-    st.caption(f"How many native units = 1 {ref_sport} equity mile.")
-
-    # Distance sports: 4 columns. Reference sport shows a static label (no
-    # number_input). Paddle is never a reference sport so always gets an input.
-    # Explicit per-sport blocks avoid session-state conflicts that occur when
-    # conditional rendering happens inside a loop.
-    dcol_bike, dcol_run, dcol_hike, dcol_paddle = st.columns(4)
-
-    with dcol_bike:
-        st.markdown("**Bike**")
-        if ref_sport == 'Bike':
-            st.caption("Reference")
-            st.markdown("1 mi = 1 equity mi")
-            bike_rate = 1.0
-        else:
-            bike_rate = st.number_input(
-                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
-                value=float(conv.get('bike_miles_per_ref_unit', 1.0)),
-                step=0.5, format="%.1f", key="settings_bike_rate",
-            )
-
-    with dcol_run:
-        st.markdown("**Run**")
-        if ref_sport == 'Run':
-            st.caption("Reference")
-            st.markdown("1 mi = 1 equity mi")
-            run_rate = 1.0
-        else:
-            run_rate = st.number_input(
-                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
-                value=float(conv.get('run_miles_per_ref_unit', 1.0)),
-                step=0.5, format="%.1f", key="settings_run_rate",
-            )
-
-    with dcol_hike:
-        st.markdown("**Hike / Walk**")
-        if ref_sport == 'Hike':
-            st.caption("Reference")
-            st.markdown("1 mi = 1 equity mi")
-            hike_rate = 1.0
-        else:
-            hike_rate = st.number_input(
-                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
-                value=float(conv.get('hike_miles_per_ref_unit', 3.0)),
-                step=0.5, format="%.1f", key="settings_hike_rate",
-            )
-
-    with dcol_paddle:
-        st.markdown("**Paddle**")
-        paddle_rate = st.number_input(
-            "miles = 1 equity mi", min_value=0.1, max_value=100.0,
-            value=float(conv.get('paddle_miles_per_ref_unit', 2.0)),
-            step=0.5, format="%.1f", key="settings_paddle_rate",
-        )
-
-    # Non-distance sports — 2 columns
-    scol_swim, scol_ski = st.columns(2)
-
-    with scol_swim:
-        st.markdown("**Swim**")
-        swim_rate = st.number_input(
-            "meters = 1 equity mi",
-            min_value=1, max_value=10000,
-            value=int(conv.get('swim_meters_per_ref_unit', conv.get('swim_meters_per_mile', 100))),
-            step=10,
-            key="settings_swim_rate",
-        )
-
-    with scol_ski:
-        st.markdown("**Ski**")
-        ski_rate = st.number_input(
-            "vertical feet = 1 equity mi",
-            min_value=100, max_value=100000,
-            value=int(conv.get('ski_vert_per_ref_unit', conv.get('ski_vert_per_mile', 1000))),
-            step=100,
-            key="settings_ski_rate",
-        )
-
-    st.divider()
-
-    # --- Goals ---
-    st.subheader("Goals")
-
-    st.markdown("**Equity Miles**")
-    gcol_annual, gcol_monthly = st.columns(2)
-    with gcol_annual:
-        annual_eq = st.number_input(
-            "Annual equity miles",
-            min_value=0, max_value=100000,
-            value=goals.get('annual_equity_miles', 3000),
-            step=100,
-            key="settings_annual_eq",
-        )
-    with gcol_monthly:
-        monthly_eq = st.number_input(
-            "Monthly equity miles",
-            min_value=0, max_value=10000,
-            value=goals.get('monthly_equity_miles', 250),
-            step=10,
-            key="settings_monthly_eq",
-        )
-
-    st.markdown("**Sport-Specific**")
-    gcol_ski, gcol_swim = st.columns(2)
-    with gcol_ski:
-        ski_goal = st.number_input(
-            "Ski season vertical feet (cumulative)",
-            min_value=0, max_value=10000000,
-            value=goals.get('ski_season_vert_ft', 200000),
-            step=10000,
-            key="settings_ski_goal",
-        )
-    with gcol_swim:
-        swim_goal = st.number_input(
-            "Swim monthly meters",
-            min_value=0, max_value=1000000,
-            value=goals.get('swim_monthly_meters', 10000),
-            step=500,
-            key="settings_swim_goal",
-        )
-
-    st.divider()
-
-    # --- Season Months ---
-    st.subheader("Season Months")
-    st.caption("Controls which months appear in the monthly chart on each sport tab.")
-
-    _month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    _month_nums  = list(range(1, 13))
+    conv         = settings.get('conversions', {})
+    goals        = settings.get('goals', {})
     saved_seasons = settings.get('seasons', {})
+    saved_home   = settings.get('home_location', {})
 
-    smcol_ski, smcol_swim = st.columns(2)
-    with smcol_ski:
-        st.markdown("**Ski season**")
-        ski_start_m = st.selectbox(
-            "Start month", _month_nums,
-            index=_month_nums.index(saved_seasons.get('ski_start_month', 11)),
-            format_func=lambda m: _month_names[m - 1],
-            key="settings_ski_start_month",
-        )
-        ski_end_m = st.selectbox(
-            "End month", _month_nums,
-            index=_month_nums.index(saved_seasons.get('ski_end_month', 5)),
-            format_func=lambda m: _month_names[m - 1],
-            key="settings_ski_end_month",
-        )
-    with smcol_swim:
-        st.markdown("**Swim season**")
-        swim_start_m = st.selectbox(
-            "Start month", _month_nums,
-            index=_month_nums.index(saved_seasons.get('swim_start_month', 5)),
-            format_func=lambda m: _month_names[m - 1],
-            key="settings_swim_start_month",
-        )
-        swim_end_m = st.selectbox(
-            "End month", _month_nums,
-            index=_month_nums.index(saved_seasons.get('swim_end_month', 9)),
-            format_func=lambda m: _month_names[m - 1],
-            key="settings_swim_end_month",
-        )
+    # --- Seed all session-state keys upfront ---
+    # Must happen before sub-tabs render so the Save button can read from
+    # st.session_state even when a sub-tab's widgets are not currently visible.
+    ref_options = ["Bike", "Run", "Hike"]
 
+    if st.session_state.get('settings_theme') not in ['dark', 'light']:
+        st.session_state['settings_theme'] = settings.get('theme', 'dark')
+
+    _cur_ref = st.session_state.get('settings_ref_sport')
+    if _cur_ref not in ref_options:
+        _saved_ref = settings.get('reference_sport', 'Bike')
+        st.session_state['settings_ref_sport'] = _saved_ref if _saved_ref in ref_options else 'Bike'
+
+    for _k, _v in [
+        ('settings_bike_rate',    float(conv.get('bike_miles_per_ref_unit', 1.0))),
+        ('settings_run_rate',     float(conv.get('run_miles_per_ref_unit', 1.0))),
+        ('settings_hike_rate',    float(conv.get('hike_miles_per_ref_unit', 3.0))),
+        ('settings_paddle_rate',  float(conv.get('paddle_miles_per_ref_unit', 2.0))),
+        ('settings_swim_rate',    int(conv.get('swim_meters_per_ref_unit', conv.get('swim_meters_per_mile', 100)))),
+        ('settings_ski_rate',     int(conv.get('ski_vert_per_ref_unit', conv.get('ski_vert_per_mile', 1000)))),
+        ('settings_annual_eq',    goals.get('annual_equity_miles', 3000)),
+        ('settings_monthly_eq',   goals.get('monthly_equity_miles', 250)),
+        ('settings_ski_goal',     goals.get('ski_season_vert_ft', 200000)),
+        ('settings_swim_goal',    goals.get('swim_monthly_meters', 10000)),
+        ('settings_home_enabled', bool(saved_home.get('enabled', False))),
+        ('settings_home_lat',     float(saved_home['lat']) if saved_home.get('lat') is not None else 40.0),
+        ('settings_home_lon',     float(saved_home['lon']) if saved_home.get('lon') is not None else -105.0),
+    ]:
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
+
+    _month_nums  = list(range(1, 13))
+    for _k, _field, _default in [
+        ('settings_ski_start_month',  'ski_start_month',  11),
+        ('settings_ski_end_month',    'ski_end_month',     5),
+        ('settings_swim_start_month', 'swim_start_month',  5),
+        ('settings_swim_end_month',   'swim_end_month',    9),
+    ]:
+        if _k not in st.session_state:
+            st.session_state[_k] = saved_seasons.get(_field, _default)
+
+    # ---- Sub-tabs as navigation TOC ----
+    stab_appear, stab_sports, stab_goals, stab_seasons, stab_map = st.tabs(
+        ["Appearance", "Sports", "Goals", "Seasons", "Map"]
+    )
+
+    # ---- Appearance ----
+    with stab_appear:
+        st.subheader("Theme")
+        st.radio(
+            "Appearance", ['dark', 'light'],
+            horizontal=True,
+            format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
+            key='settings_theme',
+        )
+        st.caption("Takes effect immediately on save.")
+
+    # ---- Sports ----
+    with stab_sports:
+        st.subheader("Reference Sport")
+        st.caption(
+            "Equity miles are expressed in units of this sport. "
+            "Bike, Run, and Hike all use distance (miles) so they can serve as the "
+            "reference. Swim and Ski use different native units (meters / vertical "
+            "feet) — their conversion rates below always express how many native "
+            "units equal one equity mile."
+        )
+        st.radio(
+            "Reference sport", ref_options,
+            horizontal=True,
+            key="settings_ref_sport",
+        )
+        _active_ref = st.session_state.get('settings_ref_sport', 'Bike')
+        _saved_ref  = settings.get('reference_sport', 'Bike')
+        if _active_ref != _saved_ref:
+            st.warning(
+                f"Reference sport changed from **{_saved_ref}** to **{_active_ref}**. "
+                "Review the conversion rates below to make sure they still reflect "
+                "your effort equivalences, then hit Save."
+            )
+
+        st.divider()
+        st.subheader("Equity Mile Conversions")
+        st.caption(f"How many native units = 1 {_active_ref} equity mile.")
+
+        dcol_bike, dcol_run, dcol_hike, dcol_paddle = st.columns(4)
+        with dcol_bike:
+            st.markdown("**Bike**")
+            if _active_ref == 'Bike':
+                st.caption("Reference")
+                st.markdown("1 mi = 1 equity mi")
+                st.session_state['settings_bike_rate'] = 1.0
+            else:
+                st.number_input(
+                    "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                    step=0.5, format="%.1f", key="settings_bike_rate",
+                )
+        with dcol_run:
+            st.markdown("**Run**")
+            if _active_ref == 'Run':
+                st.caption("Reference")
+                st.markdown("1 mi = 1 equity mi")
+                st.session_state['settings_run_rate'] = 1.0
+            else:
+                st.number_input(
+                    "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                    step=0.5, format="%.1f", key="settings_run_rate",
+                )
+        with dcol_hike:
+            st.markdown("**Hike / Walk**")
+            if _active_ref == 'Hike':
+                st.caption("Reference")
+                st.markdown("1 mi = 1 equity mi")
+                st.session_state['settings_hike_rate'] = 1.0
+            else:
+                st.number_input(
+                    "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                    step=0.5, format="%.1f", key="settings_hike_rate",
+                )
+        with dcol_paddle:
+            st.markdown("**Paddle**")
+            st.number_input(
+                "miles = 1 equity mi", min_value=0.1, max_value=100.0,
+                step=0.5, format="%.1f", key="settings_paddle_rate",
+            )
+
+        scol_swim, scol_ski = st.columns(2)
+        with scol_swim:
+            st.markdown("**Swim**")
+            st.number_input(
+                "meters = 1 equity mi",
+                min_value=1, max_value=10000, step=10,
+                key="settings_swim_rate",
+            )
+        with scol_ski:
+            st.markdown("**Ski**")
+            st.number_input(
+                "vertical feet = 1 equity mi",
+                min_value=100, max_value=100000, step=100,
+                key="settings_ski_rate",
+            )
+
+    # ---- Goals ----
+    with stab_goals:
+        st.subheader("Goals")
+        st.markdown("**Equity Miles**")
+        gcol_annual, gcol_monthly = st.columns(2)
+        with gcol_annual:
+            st.number_input(
+                "Annual equity miles",
+                min_value=0, max_value=100000, step=100,
+                key="settings_annual_eq",
+            )
+        with gcol_monthly:
+            st.number_input(
+                "Monthly equity miles",
+                min_value=0, max_value=10000, step=10,
+                key="settings_monthly_eq",
+            )
+
+        st.markdown("**Sport-Specific**")
+        gcol_ski, gcol_swim = st.columns(2)
+        with gcol_ski:
+            st.number_input(
+                "Ski season vertical feet (cumulative)",
+                min_value=0, max_value=10000000, step=10000,
+                key="settings_ski_goal",
+            )
+        with gcol_swim:
+            st.number_input(
+                "Swim monthly meters",
+                min_value=0, max_value=1000000, step=500,
+                key="settings_swim_goal",
+            )
+
+    # ---- Seasons ----
+    with stab_seasons:
+        st.subheader("Season Months")
+        st.caption("Controls which months appear in the monthly chart on each sport tab.")
+
+        _month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+        smcol_ski, smcol_swim = st.columns(2)
+        with smcol_ski:
+            st.markdown("**Ski season**")
+            st.selectbox(
+                "Start month", _month_nums,
+                format_func=lambda m: _month_names[m - 1],
+                key="settings_ski_start_month",
+            )
+            st.selectbox(
+                "End month", _month_nums,
+                format_func=lambda m: _month_names[m - 1],
+                key="settings_ski_end_month",
+            )
+        with smcol_swim:
+            st.markdown("**Swim season**")
+            st.selectbox(
+                "Start month", _month_nums,
+                format_func=lambda m: _month_names[m - 1],
+                key="settings_swim_start_month",
+            )
+            st.selectbox(
+                "End month", _month_nums,
+                format_func=lambda m: _month_names[m - 1],
+                key="settings_swim_end_month",
+            )
+
+    # ---- Map ----
+    with stab_map:
+        st.subheader("Home Location")
+        st.caption(
+            "When enabled, the bike heatmap centers on your home location instead of "
+            "the median of your ride start points."
+        )
+        st.checkbox("Use custom home location for heatmap", key="settings_home_enabled")
+        if st.session_state.get('settings_home_enabled'):
+            hm_col_lat, hm_col_lon = st.columns(2)
+            with hm_col_lat:
+                st.number_input(
+                    "Latitude", min_value=-90.0, max_value=90.0,
+                    step=0.0001, format="%.6f",
+                    key="settings_home_lat",
+                )
+            with hm_col_lon:
+                st.number_input(
+                    "Longitude", min_value=-180.0, max_value=180.0,
+                    step=0.0001, format="%.6f",
+                    key="settings_home_lon",
+                )
+            st.caption("Tip: right-click any location in Google Maps → 'What's here?' to copy coordinates.")
+
+    # ---- Save (outside sub-tabs) ----
     st.divider()
-
     if st.button("Save settings", type="primary"):
-        old_theme = settings.get('theme', 'dark')
+        _new_theme  = st.session_state.get('settings_theme', 'dark')
+        _old_theme  = settings.get('theme', 'dark')
+        _ref_sport  = st.session_state.get('settings_ref_sport', 'Bike')
+        _home_enabled = st.session_state.get('settings_home_enabled', False)
+        _home_lat   = st.session_state.get('settings_home_lat', None)
+        _home_lon   = st.session_state.get('settings_home_lon', None)
+
         updated = {
-            'theme': new_theme,
-            'reference_sport': ref_sport,
+            'theme': _new_theme,
+            'reference_sport': _ref_sport,
             'conversions': {
-                'bike_miles_per_ref_unit':   bike_rate,
-                'run_miles_per_ref_unit':    run_rate,
-                'hike_miles_per_ref_unit':   hike_rate,
-                'paddle_miles_per_ref_unit': paddle_rate,
-                'swim_meters_per_ref_unit':  swim_rate,
-                'ski_vert_per_ref_unit':     ski_rate,
+                'bike_miles_per_ref_unit':   st.session_state.get('settings_bike_rate', 1.0),
+                'run_miles_per_ref_unit':    st.session_state.get('settings_run_rate', 1.0),
+                'hike_miles_per_ref_unit':   st.session_state.get('settings_hike_rate', 3.0),
+                'paddle_miles_per_ref_unit': st.session_state.get('settings_paddle_rate', 2.0),
+                'swim_meters_per_ref_unit':  st.session_state.get('settings_swim_rate', 100),
+                'ski_vert_per_ref_unit':     st.session_state.get('settings_ski_rate', 1000),
             },
             'goals': {
-                'annual_equity_miles':  annual_eq,
-                'monthly_equity_miles': monthly_eq,
-                'ski_season_vert_ft':   ski_goal,
-                'swim_monthly_meters':  swim_goal,
+                'annual_equity_miles':  st.session_state.get('settings_annual_eq', 3000),
+                'monthly_equity_miles': st.session_state.get('settings_monthly_eq', 250),
+                'ski_season_vert_ft':   st.session_state.get('settings_ski_goal', 200000),
+                'swim_monthly_meters':  st.session_state.get('settings_swim_goal', 10000),
             },
             'seasons': {
-                'ski_start_month':  ski_start_m,
-                'ski_end_month':    ski_end_m,
-                'swim_start_month': swim_start_m,
-                'swim_end_month':   swim_end_m,
+                'ski_start_month':  st.session_state.get('settings_ski_start_month', 11),
+                'ski_end_month':    st.session_state.get('settings_ski_end_month', 5),
+                'swim_start_month': st.session_state.get('settings_swim_start_month', 5),
+                'swim_end_month':   st.session_state.get('settings_swim_end_month', 9),
+            },
+            'home_location': {
+                'enabled': _home_enabled,
+                'lat': _home_lat if _home_enabled else None,
+                'lon': _home_lon if _home_enabled else None,
             },
         }
         with open(config.SETTINGS_FILE, 'w') as f:
             json.dump(updated, f, indent=2)
         load_settings.clear()
-        if new_theme != old_theme:
-            # JS reload applies the new Streamlit theme and picks up new settings.json
-            _apply_theme_js(new_theme)
+        if _new_theme != _old_theme:
+            _apply_theme_js(_new_theme)
         else:
             st.success("Settings saved.")
             st.rerun()

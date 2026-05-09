@@ -8,8 +8,10 @@ dashboard (app.py + charts.py) is the primary interface for interactive
 use. publish_dashboard() is the single entry point called by the pipeline.
 """
 import os
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.collections as mc
 import matplotlib.dates as mdates
 from datetime import datetime
 
@@ -198,6 +200,73 @@ def plot_cumulative_bike(df, output_dir):
     plt.savefig(output_path, bbox_inches='tight', dpi=300)
     plt.close()
     print(f"📸 Saved chart: {output_path}")
+
+def _decode_polyline(encoded: str):
+    """Google Maps encoded polyline decoder — no external dependencies."""
+    coords, idx, lat, lng = [], 0, 0, 0
+    while idx < len(encoded):
+        for is_lng in (False, True):
+            result, shift, b = 0, 0, 0x20
+            while b >= 0x20:
+                b = ord(encoded[idx]) - 63
+                idx += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+            delta = ~(result >> 1) if result & 1 else result >> 1
+            if is_lng:
+                lng += delta
+            else:
+                lat += delta
+        coords.append((lat / 1e5, lng / 1e5))
+    return coords
+
+
+def generate_bike_heatmap_png(archive_file: str, output_dir: str,
+                               bike_types=None, filename='bike_heat_map_all_time.png'):
+    """Render all-time bike routes as a static PNG heatmap using matplotlib."""
+    if bike_types is None:
+        bike_types = {'Ride', 'VirtualRide', 'EBikeRide'}
+
+    if not os.path.exists(archive_file):
+        print(f"  Skipping bike heatmap — archive not found: {archive_file}")
+        return
+
+    with open(archive_file) as f:
+        raw = json.load(f)
+
+    segments = []
+    for act in raw:
+        if act.get('type') not in bike_types and act.get('sport_type') not in bike_types:
+            continue
+        poly = (act.get('map') or {}).get('summary_polyline', '')
+        if not poly:
+            continue
+        coords = _decode_polyline(poly)
+        if len(coords) < 2:
+            continue
+        segments.append([(lon, lat) for lat, lon in coords])
+
+    if not segments:
+        print("  No bike routes with polylines found — skipping heatmap PNG.")
+        return
+
+    BG   = '#0e1117'
+    LINE = '#FC4C02'
+
+    fig, ax = plt.subplots(figsize=(6, 6), facecolor=BG)
+    ax.set_facecolor(BG)
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    lc = mc.LineCollection(segments, colors=LINE, linewidths=0.4, alpha=0.35)
+    ax.add_collection(lc)
+    ax.autoscale_view()
+
+    out_path = os.path.join(output_dir, filename)
+    fig.savefig(out_path, dpi=150, bbox_inches='tight', pad_inches=0.05, facecolor=BG)
+    plt.close(fig)
+    print(f"📸 Saved bike heatmap: {out_path}")
+
 
 def publish_dashboard(summary, df, output_dir):
     """
