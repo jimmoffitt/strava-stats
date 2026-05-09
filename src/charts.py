@@ -19,7 +19,7 @@ SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
 # Equity sport palette
 RUN_PURPLE    = '#8B5CF6'
 HIKE_GREEN    = '#22C55E'
-PADDLE_CYAN   = '#06B6D4'
+PADDLE_AMBER  = '#F59E0B'   # amber — distinct from swim teal and ski blue
 CUSTOM_GRAY   = '#9CA3AF'
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def make_period_comparison_chart(
         xaxis_title=x_label,
         yaxis_title=dist_label,
         barmode='overlay',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, traceorder='normal'),
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
@@ -314,8 +314,8 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
     return fig
 
 
-SKI_BLUE = '#4A90D9'
-SKI_BLUE_LIGHT = '#A8CBF0'
+SKI_BLUE = '#1D4ED8'       # deeper indigo-blue — distinct from swim teal
+SKI_BLUE_LIGHT = '#93C5FD'
 
 
 def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, height=None):
@@ -403,11 +403,11 @@ def make_equity_annual_chart(equity_df, current_year, ref_label='Bike', height=N
 
     _SPORT_COLORS = [
         ('bike',   STRAVA_ORANGE, 'Bike'),
-        ('run',    RUN_PURPLE,    'Run'),
-        ('ski',    SKI_BLUE,      'Ski'),
         ('swim',   SWIM_TEAL,     'Swim'),
+        ('ski',    SKI_BLUE,      'Ski'),
+        ('run',    RUN_PURPLE,    'Run'),
         ('hike',   HIKE_GREEN,    'Hike'),
-        ('paddle', PADDLE_CYAN,   'Paddle'),
+        ('paddle', PADDLE_AMBER,  'Paddle'),
         ('custom', CUSTOM_GRAY,   'Custom'),
     ]
     x = equity_df['year'].astype(str)
@@ -437,7 +437,7 @@ def make_equity_annual_chart(equity_df, current_year, ref_label='Bike', height=N
         xaxis_title="Year",
         yaxis_title=f"Equity {ref_label} Miles",
         barmode='stack',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, traceorder='normal'),
     )
     if height:
         layout['height'] = height
@@ -500,7 +500,7 @@ def make_recent_months_chart(months_df, this_year, last_year, unit_label):
         xaxis_title="Month",
         yaxis_title=unit_label,
         barmode='group',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, traceorder='normal'),
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
@@ -516,11 +516,11 @@ def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
 
     _SPORT_COLORS = [
         ('bike',   STRAVA_ORANGE, 'Bike'),
-        ('run',    RUN_PURPLE,    'Run'),
-        ('ski',    SKI_BLUE,      'Ski'),
         ('swim',   SWIM_TEAL,     'Swim'),
+        ('ski',    SKI_BLUE,      'Ski'),
+        ('run',    RUN_PURPLE,    'Run'),
         ('hike',   HIKE_GREEN,    'Hike'),
-        ('paddle', PADDLE_CYAN,   'Paddle'),
+        ('paddle', PADDLE_AMBER,  'Paddle'),
         ('custom', CUSTOM_GRAY,   'Custom'),
     ]
     for col, color, label in _SPORT_COLORS:
@@ -543,7 +543,7 @@ def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
         xaxis_title="Month",
         yaxis_title=f"Equity {ref_label} Miles",
         barmode='stack',
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, traceorder='normal'),
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig

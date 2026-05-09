@@ -133,6 +133,12 @@ def load_gear_map():
     return gear_map
 
 
+# Convenience aliases so render functions read cleanly
+_agg_swim_by_year        = process_data.aggregate_swim_by_year
+_agg_swim_by_month       = process_data.aggregate_swim_by_month
+_agg_ski_by_season       = process_data.aggregate_ski_by_season
+_agg_ski_season_by_month = process_data.aggregate_ski_season_by_month
+
 # ---------------------------------------------------------------------------
 # ISO-week navigation helpers
 # ---------------------------------------------------------------------------
@@ -568,7 +574,7 @@ def render_ski_tab(ski_df, settings):
     today = date.today()
     current_season_key = today.year if today.month >= 10 else today.year - 1
 
-    seasonal_df = process_data.aggregate_ski_by_season(ski_df)
+    seasonal_df = _agg_ski_by_season(ski_df)
 
     # --- 1. Thin all-seasons overview chart ---
     st.plotly_chart(
@@ -629,9 +635,7 @@ def render_ski_tab(ski_df, settings):
     ])
 
     # --- 4. Vert by Month chart (season months, spanning both calendar years) ---
-    monthly_season = process_data.aggregate_ski_season_by_month(
-        ski_df, selected_key, start_month=ski_start, end_month=ski_end,
-    )
+    monthly_season = _agg_ski_season_by_month(ski_df, selected_key, ski_start, ski_end)
     if not monthly_season.empty:
         st.plotly_chart(
             make_monthly_chart(monthly_season, 'vert_ft', 'ft'),
@@ -709,7 +713,7 @@ def render_swim_tab(swim_df, settings, df=None):
     current_year = date.today().year
 
     # --- 1. Thin multi-year overview chart ---
-    yearly = process_data.aggregate_swim_by_year(swim_df)
+    yearly = _agg_swim_by_year(swim_df)
     if not yearly.empty:
         _unit = st.session_state.get('swim_unit', 'Meters')
         _dc = 'meters' if _unit == 'Meters' else 'yards'
@@ -734,7 +738,7 @@ def render_swim_tab(swim_df, settings, df=None):
     mult       = 1.0 if unit == 'Meters' else 1.09361
     goal_val   = monthly_goal_m * mult
 
-    monthly_all = process_data.aggregate_swim_by_month(swim_df, selected_year)
+    monthly_all = _agg_swim_by_month(swim_df, selected_year)
     if swim_start <= swim_end:
         swim_months = list(range(swim_start, swim_end + 1))
     else:
@@ -1268,7 +1272,7 @@ def render_explore_tab(df, gear_map):
             min_value=min_date,
             max_value=max_date,
             key="explore_date_range",
-            on_change=_active_tab_setter("Explore"),
+            on_change=_active_tab_setter("Tools"),
         )
     with c2:
         search_text = st.text_input(
@@ -1459,8 +1463,8 @@ def render_export_tab(df, settings):
     st.caption("Full archive — not filtered by the period/sport selector above.")
 
     yearly_bike   = process_data.aggregate_by_year(bike_df_all)
-    yearly_swim   = process_data.aggregate_swim_by_year(swim_df_all)
-    seasonal_ski  = process_data.aggregate_ski_by_season(ski_df_all)
+    yearly_swim   = _agg_swim_by_year(swim_df_all)
+    seasonal_ski  = _agg_ski_by_season(ski_df_all)
     equity_annual = process_data.aggregate_equity_by_year(df, settings)
 
     annual_figs = {}
@@ -1506,7 +1510,7 @@ def render_export_tab(df, settings):
         return result
 
     monthly_bike = _bike_monthly_by_year(bike_df_all, sel_year)
-    monthly_swim = process_data.aggregate_swim_by_month(swim_df_all, sel_year)
+    monthly_swim = _agg_swim_by_month(swim_df_all, sel_year)
     monthly_eq   = process_data.aggregate_equity_by_month(df, sel_year, settings)
 
     monthly_figs = {
@@ -1950,9 +1954,11 @@ swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 render_sync_sidebar()
 
 # TODO: restore tab_trends and "Trends" when work on the Trends tab continues
+_TAB_NAMES = ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Settings", "Tools"]
+_default_tab = st.session_state.get('active_tab')
 tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_settings, tab_tools = st.tabs(
-    ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Settings", "Tools"],
-    default=st.session_state.get('active_tab'),
+    _TAB_NAMES,
+    default=_default_tab if _default_tab in _TAB_NAMES else None,
 )
 
 with tab_combined:
