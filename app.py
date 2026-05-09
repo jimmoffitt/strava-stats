@@ -179,7 +179,31 @@ def _stats_box(items):
 
 
 def _inject_theme_css(dark: bool) -> None:
-    pass  # Streamlit's native light theme handles UI colors; chart theme is set via _charts_mod.set_theme()
+    if dark:
+        css = """
+        <style>
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #0e1117;
+            color: #e8e8e8;
+        }
+        [data-testid="stSidebar"] { background-color: #1a1c24; }
+        [data-testid="stHeader"]  { background-color: #0e1117; }
+        .stMarkdown p, .stMarkdown li { color: #e8e8e8; }
+        </style>
+        """
+    else:
+        css = """
+        <style>
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #ffffff;
+            color: #31333F;
+        }
+        [data-testid="stSidebar"] { background-color: #f0f2f6; }
+        [data-testid="stHeader"]  { background-color: #ffffff; }
+        .stMarkdown p, .stMarkdown li { color: #31333F; }
+        </style>
+        """
+    st.markdown(css, unsafe_allow_html=True)
 
 
 def _active_tab_setter(name):
