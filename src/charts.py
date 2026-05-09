@@ -547,3 +547,44 @@ def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
+
+
+def make_bike_heatmap(routes: list, center_lat: float, center_lon: float) -> go.Figure:
+    """Geographic route heatmap.
+
+    routes — list of [(lat, lon), ...] coordinate lists, one per ride.
+    All routes are combined into a single Scattermapbox trace using None
+    separators so Plotly draws each as a separate line efficiently.
+    Map style is carto-darkmatter (dark mode) or open-street-map (light).
+    No Mapbox API key required.
+    """
+    lats: list = []
+    lons: list = []
+    for route in routes:
+        for la, lo in route:
+            lats.append(la)
+            lons.append(lo)
+        lats.append(None)
+        lons.append(None)
+
+    fig = go.Figure(go.Scattermapbox(
+        lat=lats,
+        lon=lons,
+        mode='lines',
+        line=dict(width=1.5, color=STRAVA_ORANGE),
+        opacity=0.45,
+        hoverinfo='none',
+    ))
+
+    map_style = 'carto-darkmatter' if _dark else 'open-street-map'
+    fig.update_layout(
+        mapbox=dict(
+            style=map_style,
+            center=dict(lat=center_lat, lon=center_lon),
+            zoom=10,
+        ),
+        margin=dict(t=0, b=0, l=0, r=0),
+        height=560,
+        paper_bgcolor=_paper_bg(),
+    )
+    return fig

@@ -13,7 +13,7 @@ import json
 import os
 import time as _time
 import zipfile
-from datetime import date, datetime as _datetime, timedelta
+from datetime import date, datetime as _datetime, timedelta, timezone as _timezone
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +22,7 @@ import streamlit.components.v1 as _components
 from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
+    make_bike_heatmap,
     make_equity_annual_chart,
     make_equity_monthly_chart,
     make_labeled_bar_chart,
@@ -132,6 +133,63 @@ def load_gear_map():
             live = json.load(f)
         gear_map.update(live)  # live data wins over fallbacks
     return gear_map
+
+
+def _decode_polyline(s: str) -> list:
+    """Decode a Google Maps encoded polyline string to a list of (lat, lon) pairs."""
+    coords, idx, lat, lng = [], 0, 0, 0
+    while idx < len(s):
+        for is_lat in (True, False):
+            result, shift = 0, 0
+            while True:
+                b = ord(s[idx]) - 63
+                idx += 1
+                result |= (b & 0x1f) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if result & 1 else result >> 1
+            if is_lat:
+                lat += delta
+            else:
+                lng += delta
+        coords.append((lat / 1e5, lng / 1e5))
+    return coords
+
+
+@st.cache_data
+def load_bike_routes_all():
+    """Decode polylines for every bike activity in the raw archive.
+
+    Returns (routes, center_lat, center_lon) where routes is a list of dicts
+    with keys 'dt' (UTC-aware datetime) and 'coords' (list of (lat, lon)).
+    """
+    with open(config.ACTIVITIES_FILE) as f:
+        raw = json.load(f)
+
+    routes, all_lats, all_lons = [], [], []
+    for act in raw:
+        if act.get('type') not in BIKE_TYPES and act.get('sport_type') not in BIKE_TYPES:
+            continue
+        poly = (act.get('map') or {}).get('summary_polyline', '')
+        if not poly:
+            continue
+        coords = _decode_polyline(poly)
+        if not coords:
+            continue
+        date_str = (act.get('start_date') or '').replace('Z', '+00:00')
+        try:
+            dt = _datetime.fromisoformat(date_str)
+        except Exception:
+            continue
+        routes.append({'dt': dt, 'coords': coords})
+        for la, lo in coords:
+            all_lats.append(la)
+            all_lons.append(lo)
+
+    center_lat = sum(all_lats) / len(all_lats) if all_lats else 40.0
+    center_lon = sum(all_lons) / len(all_lons) if all_lons else -105.0
+    return routes, center_lat, center_lon
 
 
 # Convenience aliases so render functions read cleanly
@@ -426,6 +484,37 @@ def _render_stat_block(col, label, stats, dist_col):
 # ---------------------------------------------------------------------------
 # Bike tab
 # ---------------------------------------------------------------------------
+def render_bike_heatmap_view():
+    """Geographic route heatmap for the Bike tab."""
+    frames = {
+        'All time':     None,
+        'This year':    365,
+        'Last 90 days': 90,
+        'Last 28 days': 28,
+    }
+    _cur = st.session_state.get('heatmap_frame')
+    if _cur not in frames:
+        st.session_state['heatmap_frame'] = 'All time'
+    frame = st.selectbox("Time window", list(frames.keys()), key='heatmap_frame')
+    days = frames[frame]
+
+    all_routes, center_lat, center_lon = load_bike_routes_all()
+
+    if days is not None:
+        cutoff = _datetime.now(_timezone.utc) - timedelta(days=days)
+        routes = [r['coords'] for r in all_routes if r['dt'] >= cutoff]
+    else:
+        routes = [r['coords'] for r in all_routes]
+
+    st.caption(f"{len(routes):,} rides in view")
+    if not routes:
+        st.info("No rides in the selected time window.")
+        return
+
+    st.plotly_chart(make_bike_heatmap(routes, center_lat, center_lon),
+                    use_container_width=True)
+
+
 def render_bike_tab(bike_df, gear_map):
     # --- Thin multi-year overview chart (top) ---
     current_year = date.today().year
@@ -444,7 +533,7 @@ def render_bike_tab(bike_df, gear_map):
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         time_mode = st.radio(
-            "Time mode", ["Year", "Month", "Week"],
+            "Time mode", ["Year", "Month", "Week", "Heatmap"],
             horizontal=True, key="bike_time_mode",
             on_change=_active_tab_setter("Bike"),
         )
@@ -456,6 +545,11 @@ def render_bike_tab(bike_df, gear_map):
 
     dist_col = 'miles' if unit == 'Miles' else 'km'
     dist_label = 'Miles' if unit == 'Miles' else 'Km'
+
+    # Heatmap mode: full-width map, skip tables/gear filter
+    if time_mode == "Heatmap":
+        render_bike_heatmap_view()
+        return
 
     gear_ids = sorted(
         bike_df['gear_id'].unique().tolist(),
