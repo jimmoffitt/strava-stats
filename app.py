@@ -161,13 +161,14 @@ def _decode_polyline(s: str) -> list:
 def load_bike_routes_all():
     """Decode polylines for every bike activity in the raw archive.
 
-    Returns (routes, center_lat, center_lon) where routes is a list of dicts
-    with keys 'dt' (UTC-aware datetime) and 'coords' (list of (lat, lon)).
+    Returns a list of dicts with keys:
+      'dt'    — UTC-aware datetime
+      'coords'— list of (lat, lon) tuples
     """
     with open(config.ACTIVITIES_FILE) as f:
         raw = json.load(f)
 
-    routes, all_lats, all_lons = [], [], []
+    routes = []
     for act in raw:
         if act.get('type') not in BIKE_TYPES and act.get('sport_type') not in BIKE_TYPES:
             continue
@@ -183,13 +184,20 @@ def load_bike_routes_all():
         except Exception:
             continue
         routes.append({'dt': dt, 'coords': coords})
-        for la, lo in coords:
-            all_lats.append(la)
-            all_lons.append(lo)
+    return routes
 
-    center_lat = sum(all_lats) / len(all_lats) if all_lats else 40.0
-    center_lon = sum(all_lons) / len(all_lons) if all_lons else -105.0
-    return routes, center_lat, center_lon
+
+def _median_center(coord_lists: list):
+    """Return (lat, lon) as the median of each route's start point.
+    More robust than the mean — outlier rides don't drag the center away."""
+    if not coord_lists:
+        return 40.0, -105.0
+    lats = sorted(r[0][0] for r in coord_lists)
+    lons = sorted(r[0][1] for r in coord_lists)
+    mid = len(lats) // 2
+    if len(lats) % 2:
+        return lats[mid], lons[mid]
+    return (lats[mid - 1] + lats[mid]) / 2, (lons[mid - 1] + lons[mid]) / 2
 
 
 # Convenience aliases so render functions read cleanly
@@ -484,8 +492,8 @@ def _render_stat_block(col, label, stats, dist_col):
 # ---------------------------------------------------------------------------
 # Bike tab
 # ---------------------------------------------------------------------------
-def render_bike_heatmap_view():
-    """Geographic route heatmap for the Bike tab."""
+def render_bike_heatmap_view(compact: bool = False):
+    """Geographic route heatmap — compact=True for the sidebar column embed."""
     frames = {
         'All time':     None,
         'This year':    365,
@@ -495,10 +503,15 @@ def render_bike_heatmap_view():
     _cur = st.session_state.get('heatmap_frame')
     if _cur not in frames:
         st.session_state['heatmap_frame'] = 'All time'
-    frame = st.selectbox("Time window", list(frames.keys()), key='heatmap_frame')
+
+    frame = st.selectbox(
+        "Heatmap window", list(frames.keys()),
+        key='heatmap_frame',
+        label_visibility='collapsed' if compact else 'visible',
+    )
     days = frames[frame]
 
-    all_routes, center_lat, center_lon = load_bike_routes_all()
+    all_routes = load_bike_routes_all()
 
     if days is not None:
         cutoff = _datetime.now(_timezone.utc) - timedelta(days=days)
@@ -506,34 +519,41 @@ def render_bike_heatmap_view():
     else:
         routes = [r['coords'] for r in all_routes]
 
-    st.caption(f"{len(routes):,} rides in view")
     if not routes:
-        st.info("No rides in the selected time window.")
+        st.info("No rides in the selected window.")
         return
 
-    st.plotly_chart(make_bike_heatmap(routes, center_lat, center_lon),
-                    use_container_width=True)
+    center_lat, center_lon = _median_center(routes)
+    height = 290 if compact else 560
+    st.caption(f"{len(routes):,} rides")
+    st.plotly_chart(
+        make_bike_heatmap(routes, center_lat, center_lon, height=height),
+        use_container_width=True,
+    )
 
 
 def render_bike_tab(bike_df, gear_map):
-    # --- Thin multi-year overview chart (top) ---
     current_year = date.today().year
     yearly_all = process_data.aggregate_by_year(bike_df)
-    if not yearly_all.empty:
-        # Read unit from session state so the chart label stays in sync after the
-        # unit radio below is changed; defaults to Miles on first load.
-        _unit = st.session_state.get('bike_unit', 'Miles')
-        _dc, _dl = ('miles', 'Miles') if _unit == 'Miles' else ('km', 'Km')
-        st.plotly_chart(
-            make_year_dist_chart(yearly_all, _dc, _dl, current_year, height=220),
-            use_container_width=True,
-        )
+
+    # --- Top row: annual distance chart (left) + compact heatmap eye-candy (right) ---
+    chart_col, map_col = st.columns([3, 2])
+    with chart_col:
+        if not yearly_all.empty:
+            _unit = st.session_state.get('bike_unit', 'Miles')
+            _dc, _dl = ('miles', 'Miles') if _unit == 'Miles' else ('km', 'Km')
+            st.plotly_chart(
+                make_year_dist_chart(yearly_all, _dc, _dl, current_year, height=220),
+                use_container_width=True,
+            )
+    with map_col:
+        render_bike_heatmap_view(compact=True)
 
     # --- Controls row ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         time_mode = st.radio(
-            "Time mode", ["Year", "Month", "Week", "Heatmap"],
+            "Time mode", ["Year", "Month", "Week"],
             horizontal=True, key="bike_time_mode",
             on_change=_active_tab_setter("Bike"),
         )
@@ -545,11 +565,6 @@ def render_bike_tab(bike_df, gear_map):
 
     dist_col = 'miles' if unit == 'Miles' else 'km'
     dist_label = 'Miles' if unit == 'Miles' else 'Km'
-
-    # Heatmap mode: full-width map, skip tables/gear filter
-    if time_mode == "Heatmap":
-        render_bike_heatmap_view()
-        return
 
     gear_ids = sorted(
         bike_df['gear_id'].unique().tolist(),

@@ -549,7 +549,8 @@ def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
     return fig
 
 
-def make_bike_heatmap(routes: list, center_lat: float, center_lon: float) -> go.Figure:
+def make_bike_heatmap(routes: list, center_lat: float, center_lon: float,
+                      height: int = 560) -> go.Figure:
     """Geographic route heatmap.
 
     routes — list of [(lat, lon), ...] coordinate lists, one per ride.
@@ -584,7 +585,7 @@ def make_bike_heatmap(routes: list, center_lat: float, center_lon: float) -> go.
             zoom=10,
         ),
         margin=dict(t=0, b=0, l=0, r=0),
-        height=560,
+        height=height,
         paper_bgcolor=_paper_bg(),
     )
     return fig
