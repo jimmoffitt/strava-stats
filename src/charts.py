@@ -35,11 +35,11 @@ def set_theme(dark: bool) -> None:
 
 
 def _plot_bg():
-    return 'rgba(255,255,255,0.04)' if _dark else 'white'
+    return '#1a1c24' if _dark else 'white'
 
 
 def _paper_bg():
-    return 'rgba(0,0,0,0)' if _dark else 'white'
+    return '#0e1117' if _dark else 'white'
 
 
 def _grid_color():
