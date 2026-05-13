@@ -2107,15 +2107,12 @@ if not st.session_state.get('initial_theme_synced'):
         _apply_theme_js(_saved_theme)
 
 # TODO: restore tab_trends and "Trends" when work on the Trends tab continues
-_TAB_NAMES = ["Combined", "Bike", "Snow", "Swim", "Wrapped", "Settings", "Tools"]
+_TAB_NAMES = ["Bike", "Snow", "Swim", "Combined", "Wrapped", "Settings", "Tools"]
 _default_tab = st.session_state.get('active_tab')
-tab_combined, tab_bike, tab_snow, tab_swim, tab_wrapped, tab_settings, tab_tools = st.tabs(
+tab_bike, tab_snow, tab_swim, tab_combined, tab_wrapped, tab_settings, tab_tools = st.tabs(
     _TAB_NAMES,
     default=_default_tab if _default_tab in _TAB_NAMES else None,
 )
-
-with tab_combined:
-    render_equity_tab(df, settings)
 
 with tab_bike:
     render_bike_tab(bike_df, gear_map)
@@ -2125,6 +2122,9 @@ with tab_snow:
 
 with tab_swim:
     render_swim_tab(swim_df, settings, df)
+
+with tab_combined:
+    render_equity_tab(df, settings)
 
 with tab_wrapped:
     render_wrapped_tab(df, settings, athlete_profile)
