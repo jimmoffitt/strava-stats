@@ -15,12 +15,16 @@ load_dotenv(dotenv_path='.local.env')
 
 # 1. Define Directories
 DATA_DIR = 'data'
-PROCESSED_DIR = os.path.join(DATA_DIR, 'processed') 
+PROCESSED_DIR = os.path.join(DATA_DIR, 'processed')
 IMAGES_DIR = os.path.join(DATA_DIR, 'images')
 RAW_DIR = os.path.join(DATA_DIR, 'raw')
+ASSETS_DIR = 'assets'  # bundled, tracked images shipped with the app
 
 for d in [DATA_DIR, PROCESSED_DIR, IMAGES_DIR, RAW_DIR]:
     os.makedirs(d, exist_ok=True)
+
+# Bundled default images (shipped via repo, not generated)
+SNOW_DEFAULT_IMAGE = os.path.join(ASSETS_DIR, 'snow.jpeg')
 
 # 2. Define File Paths
 TOKEN_FILE = os.getenv('STRAVA_TOKEN_FILE', os.path.join(DATA_DIR, 'strava_tokens.json'))
@@ -83,6 +87,9 @@ DEFAULT_SETTINGS = {
         'monthly_equity_miles': 250,
         'ski_season_vert_ft': 200000,
         'swim_monthly_meters': 10000,
+        'monthly_total_target_miles': 200,
+        'bike_monthly_mode': 'derived',   # 'fixed' | 'derived'
+        'bike_monthly_miles': 150,        # used only when mode == 'fixed'
     },
     'seasons': {
         'ski_start_month':  11,  # November
@@ -94,6 +101,9 @@ DEFAULT_SETTINGS = {
         'enabled': False,
         'lat': None,
         'lon': None,
+    },
+    'images': {
+        'snow_path': None,   # None = use bundled SNOW_DEFAULT_IMAGE
     },
 }
 

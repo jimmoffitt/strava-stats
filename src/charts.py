@@ -205,18 +205,33 @@ def make_period_comparison_chart(
     return fig
 
 
-def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None):
+def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None):
     """Bar chart of distance by month — 12 bars, 0-filled for empty months.
-    Optional dashed goal line."""
+    Optional dashed goal line. `goal` may be a scalar (one horizontal line) or
+    a sequence of 12 values for a per-month stepped goal. `color` overrides
+    the bar color (defaults to Strava orange)."""
+    bar_color = color or STRAVA_ORANGE
     fig = go.Figure(go.Bar(
         x=monthly_df['month_name'],
         y=monthly_df[dist_col],
-        marker_color=STRAVA_ORANGE,
+        marker_color=bar_color,
         text=[f"{v:,.0f}" if v > 0 else "" for v in monthly_df[dist_col]],
         textposition='inside',
         insidetextanchor='end',
     ))
-    if goal and goal > 0:
+    if hasattr(goal, '__len__') and not isinstance(goal, str):
+        goal_vals = list(goal)
+        if len(goal_vals) == len(monthly_df) and any(v > 0 for v in goal_vals):
+            fig.add_trace(go.Scatter(
+                x=monthly_df['month_name'],
+                y=goal_vals,
+                mode='lines',
+                line=dict(dash='dash', color='gray', width=1.5, shape='hv'),
+                name='Goal',
+                hovertemplate='Goal: %{y:,.0f}<extra></extra>',
+                showlegend=False,
+            ))
+    elif goal and goal > 0:
         fig.add_hline(
             y=goal,
             line_dash='dash',

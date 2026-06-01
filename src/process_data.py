@@ -753,6 +753,68 @@ def _equity_rates(settings):
     }
 
 
+def _months_in_season(start, end):
+    """Return list of month numbers (1-12) covered by [start, end], wrapping at year-end."""
+    if start <= end:
+        return list(range(start, end + 1))
+    return list(range(start, 13)) + list(range(1, end + 1))
+
+
+def bike_monthly_goal_series(settings):
+    """
+    Per-month bike-miles target for the year, returned as a list of length 12
+    (index 0 = January).
+
+    Two modes (settings['goals']['bike_monthly_mode']):
+      - 'fixed':   every month = goals.bike_monthly_miles
+      - 'derived': each month = monthly_total_target_miles
+                                - (swim equiv in bike miles, if month in swim season)
+                                - (ski equiv per ski-season-month, if month in ski season)
+
+    Equity conversion: swim/ski native units are divided by the configured
+    rates to get equity miles, then scaled to bike miles via bike_miles_per_ref_unit
+    (which is 1.0 when Bike is the reference sport).
+    """
+    goals   = settings.get('goals', {})
+    seasons = settings.get('seasons', {})
+    mode    = goals.get('bike_monthly_mode', 'derived')
+
+    if mode == 'fixed':
+        fixed = float(goals.get('bike_monthly_miles', 150))
+        return [fixed] * 12
+
+    total   = float(goals.get('monthly_total_target_miles', 200))
+    rates   = _equity_rates(settings)
+    eq_to_bike = 1.0 if rates['ref'] == 'Bike' else float(rates['bike'])
+
+    swim_months = set(_months_in_season(
+        int(seasons.get('swim_start_month', 5)),
+        int(seasons.get('swim_end_month',   9)),
+    ))
+    ski_months_list = _months_in_season(
+        int(seasons.get('ski_start_month', 11)),
+        int(seasons.get('ski_end_month',    5)),
+    )
+    ski_months = set(ski_months_list)
+    num_ski_months = max(len(ski_months_list), 1)
+
+    swim_meters_monthly = float(goals.get('swim_monthly_meters', 0))
+    swim_equiv_bike     = (swim_meters_monthly / float(rates['swim'])) * eq_to_bike
+
+    ski_vert_seasonal   = float(goals.get('ski_season_vert_ft', 0))
+    ski_per_month_equiv = (ski_vert_seasonal / num_ski_months / float(rates['ski'])) * eq_to_bike
+
+    out = []
+    for m in range(1, 13):
+        target = total
+        if m in swim_months:
+            target -= swim_equiv_bike
+        if m in ski_months:
+            target -= ski_per_month_equiv
+        out.append(max(target, 0.0))
+    return out
+
+
 def aggregate_equity_by_year(df, settings):
     """
     Equity miles per year, broken down by sport.

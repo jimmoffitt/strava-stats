@@ -22,6 +22,7 @@ import streamlit.components.v1 as _components
 from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
+    SKI_BLUE,
     make_bike_heatmap,
     make_equity_annual_chart,
     make_equity_monthly_chart,
@@ -534,7 +535,7 @@ def render_bike_heatmap_view(compact: bool = False):
     )
 
 
-def render_bike_tab(bike_df, gear_map):
+def render_bike_tab(bike_df, gear_map, settings):
     current_year = date.today().year
     yearly_all = process_data.aggregate_by_year(bike_df)
 
@@ -629,8 +630,11 @@ def render_bike_tab(bike_df, gear_map):
 
             # Distance by Month chart for selected year
             monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
+            _bike_goal_series = process_data.bike_monthly_goal_series(settings)
+            if dist_col == 'km':
+                _bike_goal_series = [v * 1.60934 for v in _bike_goal_series]
             st.plotly_chart(
-                make_monthly_chart(monthly_bike, dist_col, dist_label),
+                make_monthly_chart(monthly_bike, dist_col, dist_label, goal=_bike_goal_series),
             )
 
     # --- Dispatch to view ---
@@ -685,10 +689,16 @@ def render_ski_tab(ski_df, settings):
 
     seasonal_df = _agg_ski_by_season(ski_df)
 
-    # --- 1. Thin all-seasons overview chart ---
-    st.plotly_chart(
-        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220),
-    )
+    # --- 1. Top row: all-seasons overview chart (left) + snow image (right) ---
+    _chart_col, _img_col = st.columns([3, 1])
+    with _chart_col:
+        st.plotly_chart(
+            make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220),
+        )
+    with _img_col:
+        _img_path = (settings.get('images', {}) or {}).get('snow_path') or config.SNOW_DEFAULT_IMAGE
+        if os.path.exists(_img_path):
+            st.image(_img_path, width="stretch")
 
     # --- 2. Season selector (e.g. "2025-2026") ---
     # season_key is the start year; season_label is the full "YYYY-YYYY" string.
@@ -724,7 +734,14 @@ def render_ski_tab(ski_df, settings):
     ])
     if goal_vert > 0:
         progress = min(row['vert_ft'] / goal_vert, 1.0)
-        st.progress(progress, text=f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({progress*100:.0f}%)")
+        st.markdown(
+            f"<div style='font-size:13px;margin:6px 0 4px'>"
+            f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({progress*100:.0f}%)</div>"
+            f"<div style='background:#2a2d35;border-radius:4px;height:8px;overflow:hidden'>"
+            f"<div style='width:{progress*100:.1f}%;background:{SKI_BLUE};height:100%'></div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
     # All-time stats box
     best_season_row = seasonal_df.loc[seasonal_df['vert_ft'].idxmax()]
@@ -746,7 +763,7 @@ def render_ski_tab(ski_df, settings):
     monthly_season = _agg_ski_season_by_month(ski_df, selected_key, ski_start, ski_end)
     if not monthly_season.empty:
         st.plotly_chart(
-            make_monthly_chart(monthly_season, 'vert_ft', 'ft'),
+            make_monthly_chart(monthly_season, 'vert_ft', 'ft', color=SKI_BLUE),
         )
 
     # --- 5. Most Recent Snow Activities ---
@@ -1789,6 +1806,7 @@ def render_settings_tab(settings):
     goals        = settings.get('goals', {})
     saved_seasons = settings.get('seasons', {})
     saved_home   = settings.get('home_location', {})
+    saved_images = settings.get('images', {}) or {}
 
     # --- Seed all session-state keys upfront ---
     # Must happen before sub-tabs render so the Save button can read from
@@ -1814,6 +1832,9 @@ def render_settings_tab(settings):
         ('settings_monthly_eq',   goals.get('monthly_equity_miles', 250)),
         ('settings_ski_goal',     goals.get('ski_season_vert_ft', 200000)),
         ('settings_swim_goal',    goals.get('swim_monthly_meters', 10000)),
+        ('settings_monthly_total_target', float(goals.get('monthly_total_target_miles', 200))),
+        ('settings_bike_monthly_miles',   float(goals.get('bike_monthly_miles', 150))),
+        ('settings_snow_image_path',      saved_images.get('snow_path') or ''),
         ('settings_home_enabled', bool(saved_home.get('enabled', False))),
         ('settings_home_lat',     float(saved_home['lat']) if saved_home.get('lat') is not None else 40.0),
         ('settings_home_lon',     float(saved_home['lon']) if saved_home.get('lon') is not None else -105.0),
@@ -1831,21 +1852,14 @@ def render_settings_tab(settings):
         if _k not in st.session_state:
             st.session_state[_k] = saved_seasons.get(_field, _default)
 
-    # ---- Sub-tabs as navigation TOC ----
-    stab_appear, stab_sports, stab_goals, stab_seasons, stab_map = st.tabs(
-        ["Appearance", "Sports", "Goals", "Seasons", "Map"]
-    )
+    _bike_mode_options = ['fixed', 'derived']
+    if st.session_state.get('settings_bike_monthly_mode') not in _bike_mode_options:
+        st.session_state['settings_bike_monthly_mode'] = goals.get('bike_monthly_mode', 'derived')
 
-    # ---- Appearance ----
-    with stab_appear:
-        st.subheader("Theme")
-        st.radio(
-            "Appearance", ['dark', 'light'],
-            horizontal=True,
-            format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
-            key='settings_theme',
-        )
-        st.caption("Takes effect immediately on save.")
+    # ---- Sub-tabs as navigation TOC ----
+    stab_sports, stab_goals, stab_seasons, stab_map, stab_appear = st.tabs(
+        ["Sport equity", "Goals", "Seasons", "Map", "Appearance"]
+    )
 
     # ---- Sports ----
     with stab_sports:
@@ -1965,6 +1979,52 @@ def render_settings_tab(settings):
                 key="settings_swim_goal",
             )
 
+        st.markdown("**Bike Monthly Miles**")
+        st.radio(
+            "Goal mode",
+            _bike_mode_options,
+            horizontal=True,
+            format_func=lambda m: 'Fixed value' if m == 'fixed' else 'Derived from total target',
+            key="settings_bike_monthly_mode",
+        )
+        if st.session_state.get('settings_bike_monthly_mode') == 'fixed':
+            st.number_input(
+                "Bike monthly miles",
+                min_value=0.0, max_value=10000.0, step=10.0, format="%.0f",
+                key="settings_bike_monthly_miles",
+            )
+        else:
+            st.number_input(
+                "Monthly total target (bike miles)",
+                min_value=0.0, max_value=10000.0, step=10.0, format="%.0f",
+                key="settings_monthly_total_target",
+            )
+            st.caption(
+                "Each month's bike target = total − swim equivalent (swim-season months) "
+                "− ski equivalent (ski-season months, spread evenly). Equivalents use the "
+                "conversion rates in the Sports tab."
+            )
+            preview = process_data.bike_monthly_goal_series({
+                **settings,
+                'goals': {
+                    **goals,
+                    'monthly_total_target_miles': st.session_state.get('settings_monthly_total_target', 200),
+                    'ski_season_vert_ft':         st.session_state.get('settings_ski_goal', 0),
+                    'swim_monthly_meters':        st.session_state.get('settings_swim_goal', 0),
+                },
+                'seasons': {
+                    'ski_start_month':  st.session_state.get('settings_ski_start_month', 11),
+                    'ski_end_month':    st.session_state.get('settings_ski_end_month', 5),
+                    'swim_start_month': st.session_state.get('settings_swim_start_month', 5),
+                    'swim_end_month':   st.session_state.get('settings_swim_end_month', 9),
+                },
+            })
+            _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            st.dataframe(
+                {'Month': _months, 'Bike target (mi)': [round(v) for v in preview]},
+                hide_index=True, width="stretch",
+            )
+
     # ---- Seasons ----
     with stab_seasons:
         st.subheader("Season Months")
@@ -2023,6 +2083,30 @@ def render_settings_tab(settings):
                 )
             st.caption("Tip: right-click any location in Google Maps → 'What's here?' to copy coordinates.")
 
+    # ---- Appearance ----
+    with stab_appear:
+        st.subheader("Theme")
+        st.radio(
+            "Appearance", ['dark', 'light'],
+            horizontal=True,
+            format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
+            key='settings_theme',
+        )
+        st.caption("Takes effect immediately on save.")
+
+        st.divider()
+        st.subheader("Snow tab image")
+        st.text_input(
+            "Path to a custom snow image (leave blank for default)",
+            key="settings_snow_image_path",
+            placeholder=config.SNOW_DEFAULT_IMAGE,
+        )
+        _preview = st.session_state.get('settings_snow_image_path') or config.SNOW_DEFAULT_IMAGE
+        if os.path.exists(_preview):
+            st.image(_preview, width=180)
+        else:
+            st.caption(f"⚠ File not found: {_preview}")
+
     # ---- Save (outside sub-tabs) ----
     st.divider()
     if st.button("Save settings", type="primary"):
@@ -2049,6 +2133,9 @@ def render_settings_tab(settings):
                 'monthly_equity_miles': st.session_state.get('settings_monthly_eq', 250),
                 'ski_season_vert_ft':   st.session_state.get('settings_ski_goal', 200000),
                 'swim_monthly_meters':  st.session_state.get('settings_swim_goal', 10000),
+                'monthly_total_target_miles': st.session_state.get('settings_monthly_total_target', 200),
+                'bike_monthly_mode':         st.session_state.get('settings_bike_monthly_mode', 'derived'),
+                'bike_monthly_miles':        st.session_state.get('settings_bike_monthly_miles', 150),
             },
             'seasons': {
                 'ski_start_month':  st.session_state.get('settings_ski_start_month', 11),
@@ -2060,6 +2147,9 @@ def render_settings_tab(settings):
                 'enabled': _home_enabled,
                 'lat': _home_lat if _home_enabled else None,
                 'lon': _home_lon if _home_enabled else None,
+            },
+            'images': {
+                'snow_path': (st.session_state.get('settings_snow_image_path') or '').strip() or None,
             },
         }
         with open(config.SETTINGS_FILE, 'w') as f:
@@ -2115,7 +2205,7 @@ tab_bike, tab_snow, tab_swim, tab_combined, tab_wrapped, tab_settings, tab_tools
 )
 
 with tab_bike:
-    render_bike_tab(bike_df, gear_map)
+    render_bike_tab(bike_df, gear_map, settings)
 
 with tab_snow:
     render_ski_tab(ski_df, settings)
