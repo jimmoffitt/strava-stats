@@ -773,6 +773,7 @@ def render_ski_tab(ski_df, settings):
         lambda r: f"{r['elevation_feet']:,.0f} ft vert",
         "Most Recent Snow Activities",
         key_prefix="ski",
+        widget="number",
     )
 
     # --- 6. Biggest Snow Days (All Seasons) ---
@@ -1144,16 +1145,27 @@ _LONGEST_COLS = [
 ]
 
 
-def _render_recent_table(df, fmt_dist, title="Most Recent Activities", key_prefix="recent"):
-    """Render the N most recent activities with a slider to control N (default 5, max 20)."""
+def _render_recent_table(df, fmt_dist, title="Most Recent Activities",
+                         key_prefix="recent", widget="slider"):
+    """Render the N most recent activities with a control for N (default 5, max 20).
+    widget='slider' (default) uses st.slider; widget='number' uses
+    st.number_input — useful when a tab's color scheme conflicts with the
+    slider's Streamlit-primary-color filled track."""
     st.subheader(title)
     if df.empty:
         st.info("No activities to display.")
         return
-    n = st.slider(
-        "Number to show", min_value=1, max_value=20, value=5,
-        key=f"{key_prefix}_recent_n",
-    )
+
+    if widget == "number":
+        n = st.number_input(
+            "Number to show", min_value=1, max_value=20, value=5, step=1,
+            key=f"{key_prefix}_recent_n",
+        )
+    else:
+        n = st.slider(
+            "Number to show", min_value=1, max_value=20, value=5,
+            key=f"{key_prefix}_recent_n",
+        )
     recent = df.sort_values('start_date_local', ascending=False).head(n).copy()
     recent['date_str']     = pd.to_datetime(recent['start_date_local']).apply(_fmt_date)
     recent['dist_display'] = recent.apply(fmt_dist, axis=1)
