@@ -24,7 +24,8 @@ for d in [DATA_DIR, PROCESSED_DIR, IMAGES_DIR, RAW_DIR]:
     os.makedirs(d, exist_ok=True)
 
 # Bundled default images (shipped via repo, not generated)
-SNOW_DEFAULT_IMAGE = os.path.join(ASSETS_DIR, 'snow.jpeg')
+SNOW_DEFAULT_IMAGE = os.path.join(ASSETS_DIR, 'snow.jpg')
+SWIM_DEFAULT_IMAGE = os.path.join(ASSETS_DIR, 'pool.jpg')
 
 # 2. Define File Paths
 TOKEN_FILE = os.getenv('STRAVA_TOKEN_FILE', os.path.join(DATA_DIR, 'strava_tokens.json'))
@@ -104,6 +105,7 @@ DEFAULT_SETTINGS = {
     },
     'images': {
         'snow_path': None,   # None = use bundled SNOW_DEFAULT_IMAGE
+        'swim_path': None,   # None = use bundled SWIM_DEFAULT_IMAGE
     },
 }
 

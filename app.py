@@ -836,16 +836,22 @@ def render_swim_tab(swim_df, settings, df=None):
     swim_end   = seasons.get('swim_end_month', 9)
     current_year = date.today().year
 
-    # --- 1. Thin multi-year overview chart ---
+    # --- 1. Top row: multi-year overview chart (left) + pool image (right) ---
     yearly = _agg_swim_by_year(swim_df)
-    if not yearly.empty:
-        _unit = st.session_state.get('swim_unit', 'Meters')
-        _dc = 'meters' if _unit == 'Meters' else 'yards'
-        yearly_plot = yearly.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
-        yearly_plot.columns = ['year', 'swims', _dc]
-        st.plotly_chart(
-            make_swim_year_chart(yearly_plot, current_year, height=220),
-        )
+    _chart_col, _img_col = st.columns([3, 1])
+    with _chart_col:
+        if not yearly.empty:
+            _unit = st.session_state.get('swim_unit', 'Meters')
+            _dc = 'meters' if _unit == 'Meters' else 'yards'
+            yearly_plot = yearly.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
+            yearly_plot.columns = ['year', 'swims', _dc]
+            st.plotly_chart(
+                make_swim_year_chart(yearly_plot, current_year, height=220),
+            )
+    with _img_col:
+        _img_path = (settings.get('images', {}) or {}).get('swim_path') or config.SWIM_DEFAULT_IMAGE
+        if os.path.exists(_img_path):
+            st.image(_img_path, width="stretch")
 
     # --- 2. Controls ---
     ctrl_l, ctrl_r = st.columns(2)
@@ -1847,6 +1853,7 @@ def render_settings_tab(settings):
         ('settings_monthly_total_target', float(goals.get('monthly_total_target_miles', 200))),
         ('settings_bike_monthly_miles',   float(goals.get('bike_monthly_miles', 150))),
         ('settings_snow_image_path',      saved_images.get('snow_path') or ''),
+        ('settings_swim_image_path',      saved_images.get('swim_path') or ''),
         ('settings_home_enabled', bool(saved_home.get('enabled', False))),
         ('settings_home_lat',     float(saved_home['lat']) if saved_home.get('lat') is not None else 40.0),
         ('settings_home_lon',     float(saved_home['lon']) if saved_home.get('lon') is not None else -105.0),
@@ -2107,17 +2114,30 @@ def render_settings_tab(settings):
         st.caption("Takes effect immediately on save.")
 
         st.divider()
-        st.subheader("Snow tab image")
-        st.text_input(
-            "Path to a custom snow image (leave blank for default)",
-            key="settings_snow_image_path",
-            placeholder=config.SNOW_DEFAULT_IMAGE,
-        )
-        _preview = st.session_state.get('settings_snow_image_path') or config.SNOW_DEFAULT_IMAGE
-        if os.path.exists(_preview):
-            st.image(_preview, width=180)
-        else:
-            st.caption(f"⚠ File not found: {_preview}")
+        st.subheader("Sport tab images")
+        _img_col_snow, _img_col_swim = st.columns(2)
+        with _img_col_snow:
+            st.text_input(
+                "Snow image path (blank = default)",
+                key="settings_snow_image_path",
+                placeholder=config.SNOW_DEFAULT_IMAGE,
+            )
+            _snow_preview = st.session_state.get('settings_snow_image_path') or config.SNOW_DEFAULT_IMAGE
+            if os.path.exists(_snow_preview):
+                st.image(_snow_preview, width=180)
+            else:
+                st.caption(f"⚠ File not found: {_snow_preview}")
+        with _img_col_swim:
+            st.text_input(
+                "Swim image path (blank = default)",
+                key="settings_swim_image_path",
+                placeholder=config.SWIM_DEFAULT_IMAGE,
+            )
+            _swim_preview = st.session_state.get('settings_swim_image_path') or config.SWIM_DEFAULT_IMAGE
+            if os.path.exists(_swim_preview):
+                st.image(_swim_preview, width=180)
+            else:
+                st.caption(f"⚠ File not found: {_swim_preview}")
 
     # ---- Save (outside sub-tabs) ----
     st.divider()
@@ -2162,6 +2182,7 @@ def render_settings_tab(settings):
             },
             'images': {
                 'snow_path': (st.session_state.get('settings_snow_image_path') or '').strip() or None,
+                'swim_path': (st.session_state.get('settings_swim_image_path') or '').strip() or None,
             },
         }
         with open(config.SETTINGS_FILE, 'w') as f:
