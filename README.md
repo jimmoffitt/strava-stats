@@ -196,3 +196,16 @@ Created automatically with defaults on first run. Edit via the Settings tab or d
   }
 }
 ```
+
+---
+
+## Acknowledgments
+
+Built with the help of [Claude Code](https://claude.com/claude-code) as a pair‑programming assistant. Claude was used to:
+
+- Scaffold the interactive Streamlit dashboard from an earlier static-PNG pipeline.
+- Implement the per-sport tabs (Bike, Snow, Swim, Combined, Wrapped), the cross-sport equity model, and the goal/seasons configuration UI.
+- Add the geographic ride heatmap, custom monthly goal logic, and per-tab styling.
+- Refactor data processing into `fetch / process / publish` modules and keep tests, configuration, and documentation in sync.
+
+All design decisions, data sources, and final code review were done by the human author. Claude generated code under direction; nothing was merged without inspection.
