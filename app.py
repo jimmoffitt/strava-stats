@@ -268,14 +268,6 @@ def _apply_theme_js(theme: str) -> None:
     _components.html(js, height=0, scrolling=False)
 
 
-def _active_tab_setter(name):
-    """Returns an on_change callback that records which tab the user is on.
-    Used with st.tabs(default=...) to survive explicit st.rerun() calls."""
-    def _cb():
-        st.session_state['active_tab'] = name
-    return _cb
-
-
 def _prev_iso_week(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     prev_monday = monday - timedelta(weeks=1)
@@ -559,7 +551,6 @@ def render_bike_tab(bike_df, gear_map, settings):
         time_mode = st.radio(
             "Time mode", ["Year", "Month", "Week"],
             horizontal=True, key="bike_time_mode",
-            on_change=_active_tab_setter("Bike"),
         )
     with ctrl_r:
         unit = st.radio(
@@ -717,7 +708,6 @@ def render_ski_tab(ski_df, settings):
 
     selected_label = st.selectbox(
         "Season", season_labels, key="ski_season_sel",
-        on_change=_active_tab_setter("Snow"),
     )
     selected_key = label_to_key[selected_label]
 
@@ -857,8 +847,7 @@ def render_swim_tab(swim_df, settings, df=None):
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
-        selected_year = st.selectbox("Year", years, key="swim_year",
-                                     on_change=_active_tab_setter("Swim"))
+        selected_year = st.selectbox("Year", years, key="swim_year")
     with ctrl_r:
         unit = st.radio("Units", ["Meters", "Yards"], horizontal=True, key="swim_unit")
 
@@ -957,8 +946,7 @@ def render_equity_tab(df, settings):
     available_years = sorted(df['year'].unique().tolist(), reverse=True)
     default_year = today.year - 1
     default_idx = available_years.index(default_year) if default_year in available_years else 0
-    selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year",
-                                 on_change=_active_tab_setter("Combined"))
+    selected_year = st.selectbox("Year", available_years, index=default_idx, key="equity_year")
 
     # --- 3. Compact stats box + goal ---
     yr_row = yearly[yearly['year'] == selected_year]
@@ -1213,7 +1201,6 @@ def render_wrapped_tab(df, settings, athlete_profile):
     with c1:
         selected_period = st.selectbox(
             "Time period", period_options, index=0, key="wrapped_period",
-            on_change=_active_tab_setter("Wrapped"),
         )
     with c2:
         selected_sport = st.selectbox(
@@ -1404,7 +1391,6 @@ def render_explore_tab(df, gear_map):
             min_value=min_date,
             max_value=max_date,
             key="explore_date_range",
-            on_change=_active_tab_setter("Tools"),
         )
     with c2:
         search_text = st.text_input(
@@ -1782,38 +1768,32 @@ def _run_sync():
             st.error(str(exc))
 
 
-def render_sync_sidebar():
-    with st.sidebar:
-        _charts_mod.set_theme(st.context.theme.type == 'dark')
+def render_data_sync():
+    """Compact data-sync footer in the sidebar. Assumes the caller is already
+    inside the sidebar context (the nav block opens it). Keeps the 'Activities
+    in archive' count front and center — it's the number that's satisfying to
+    watch climb — and trims the rest to a single status line plus the button."""
+    st.divider()
+    st.markdown("**Data Sync**")
 
-        st.divider()
-        st.header("Data Sync")
+    last = _load_last_sync()
+    if last:
+        total = last.get('activity_count_latest_fetch', 0)
+        st.metric("Activities in archive", f"{total:,}")
+        age = _age_string(last.get('last_check', ''))
+        new_ct = last.get('new_on_last_sync')
+        status = f"Synced {age}"
+        if new_ct:
+            status += f"  ·  ↑{new_ct} new"
+        st.caption(status)
+    else:
+        st.caption("No sync record yet — run `python run_pipeline.py` once.")
 
-        last = _load_last_sync()
-        if last:
-            age = _age_string(last.get('last_check', ''))
-            total = last.get('activity_count_latest_fetch', 0)
-            new_ct = last.get('new_on_last_sync')
+    if st.button("🔄 Sync Now", type="primary", width="stretch"):
+        _run_sync()
 
-            st.caption(f"Last synced: **{age}**")
-            st.metric("Activities in archive", f"{total:,}")
-            if new_ct is not None:
-                if new_ct > 0:
-                    st.caption(f"↑ {new_ct} new on last sync")
-                else:
-                    st.caption("Up to date on last sync")
-        else:
-            st.caption("No sync record yet.")
-            st.caption("Run `python run_pipeline.py` for first-time setup, then use Sync below.")
-
-        st.divider()
-
-        if st.button("🔄 Sync Now", type="primary", width="stretch"):
-            _run_sync()
-
-        years_str = ", ".join(str(y) for y in config.STRAVA_YEARS)
-        st.caption(f"Checking years: {years_str}")
-        st.caption("Update `STRAVA_YEARS` in `.local.env` to change scope.")
+    years_str = ", ".join(str(y) for y in config.STRAVA_YEARS)
+    st.caption(f"Years: {years_str}  ·  set `STRAVA_YEARS` in `.local.env`")
 
 
 # ---------------------------------------------------------------------------
@@ -2217,8 +2197,6 @@ bike_df  = df[df['final_type'].isin(BIKE_TYPES)].copy()
 ski_df   = df[df['final_type'].isin(SKI_TYPES)  & ~_eq_mask].copy()
 swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 
-render_sync_sidebar()
-
 # On first render of each browser session, sync localStorage to the saved theme
 # preference.  Subsequent renders skip this (initial_theme_synced is set) so
 # that the user can still override via Streamlit's native ⋮ Settings menu.
@@ -2229,35 +2207,63 @@ if not st.session_state.get('initial_theme_synced'):
     if _saved_theme != _current_theme:
         _apply_theme_js(_saved_theme)
 
-# TODO: restore tab_trends and "Trends" when work on the Trends tab continues
-_TAB_NAMES = ["Bike", "Snow", "Swim", "Combined", "Wrapped", "Settings", "Tools"]
-_default_tab = st.session_state.get('active_tab')
-tab_bike, tab_snow, tab_swim, tab_combined, tab_wrapped, tab_settings, tab_tools = st.tabs(
-    _TAB_NAMES,
-    default=_default_tab if _default_tab in _TAB_NAMES else None,
+# ---------------------------------------------------------------------------
+# Sidebar navigation — native st.navigation with a hand-built sidebar, mirroring
+# the spotify-stats layout. Page selection survives reruns (no tab snap-back),
+# and routing guarantees exactly one active item across all groups. Each page is
+# a zero-arg callable that closes over the module-level frames loaded above.
+# TODO: Wrapped stays in View for now; revisit its contents to make it richer.
+# ---------------------------------------------------------------------------
+def _p_bike():     render_bike_tab(bike_df, gear_map, settings)
+def _p_snow():     render_ski_tab(ski_df, settings)
+def _p_swim():     render_swim_tab(swim_df, settings, df)
+def _p_combined(): render_equity_tab(df, settings)
+def _p_wrapped():  render_wrapped_tab(df, settings, athlete_profile)
+def _p_explore():  render_explore_tab(df, gear_map)
+def _p_export():   render_export_tab(df, settings)
+def _p_settings(): render_settings_tab(settings)
+
+# Open on the reference sport's view. Among the reference options (Bike/Run/Hike)
+# only Bike has a dedicated view, so Run/Hike fall back to Bike.
+_default_path = {"Bike": "bike"}.get(settings.get('reference_sport', 'Bike'), 'bike')
+
+def _page(fn, title, icon, path):
+    return st.Page(fn, title=title, icon=icon, url_path=path,
+                   default=(path == _default_path))
+
+_view_pages = [
+    _page(_p_bike,     "Bike",     "🚴", "bike"),
+    _page(_p_snow,     "Snow",     "⛷️", "snow"),
+    _page(_p_swim,     "Swim",     "🏊", "swim"),
+    _page(_p_combined, "Combined", "➕", "combined"),
+    _page(_p_wrapped,  "Wrapped",  "🎁", "wrapped"),
+]
+_tools_pages = [
+    _page(_p_explore, "Explore", "🔍", "explore"),
+    _page(_p_export,  "Export",  "📤", "export"),
+]
+_settings_pages = [
+    _page(_p_settings, "Settings", "⚙️", "settings"),
+]
+
+pg = st.navigation(
+    {"View": _view_pages, "Tools": _tools_pages, "Settings": _settings_pages},
+    position="hidden",
 )
 
-with tab_bike:
-    render_bike_tab(bike_df, gear_map, settings)
+with st.sidebar:
+    _charts_mod.set_theme(st.context.theme.type == 'dark')
+    st.markdown("**View**")
+    for _p in _view_pages:
+        st.page_link(_p)
+    st.divider()
+    st.markdown("**Tools**")
+    for _p in _tools_pages:
+        st.page_link(_p)
+    st.divider()
+    st.markdown("**Settings**")
+    for _p in _settings_pages:
+        st.page_link(_p)
+    render_data_sync()
 
-with tab_snow:
-    render_ski_tab(ski_df, settings)
-
-with tab_swim:
-    render_swim_tab(swim_df, settings, df)
-
-with tab_combined:
-    render_equity_tab(df, settings)
-
-with tab_wrapped:
-    render_wrapped_tab(df, settings, athlete_profile)
-
-with tab_settings:
-    render_settings_tab(settings)
-
-with tab_tools:
-    tools_explore, tools_export = st.tabs(["Explore", "Export"])
-    with tools_explore:
-        render_explore_tab(df, gear_map)
-    with tools_export:
-        render_export_tab(df, settings)
+pg.run()
