@@ -1812,7 +1812,7 @@ def render_settings_tab(settings):
     ref_options = ["Bike", "Run", "Hike"]
 
     if st.session_state.get('settings_theme') not in ['dark', 'light']:
-        st.session_state['settings_theme'] = settings.get('theme', 'dark')
+        st.session_state['settings_theme'] = settings.get('theme', 'light')
 
     _cur_ref = st.session_state.get('settings_ref_sport')
     if _cur_ref not in ref_options:
@@ -2122,8 +2122,8 @@ def render_settings_tab(settings):
     # ---- Save (outside sub-tabs) ----
     st.divider()
     if st.button("Save settings", type="primary"):
-        _new_theme  = st.session_state.get('settings_theme', 'dark')
-        _old_theme  = settings.get('theme', 'dark')
+        _new_theme  = st.session_state.get('settings_theme', 'light')
+        _old_theme  = settings.get('theme', 'light')
         _ref_sport  = st.session_state.get('settings_ref_sport', 'Bike')
         _home_enabled = st.session_state.get('settings_home_enabled', False)
         _home_lat   = st.session_state.get('settings_home_lat', None)
@@ -2202,8 +2202,8 @@ swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
 # that the user can still override via Streamlit's native ⋮ Settings menu.
 if not st.session_state.get('initial_theme_synced'):
     st.session_state['initial_theme_synced'] = True
-    _saved_theme = settings.get('theme', 'dark')
-    _current_theme = st.context.theme.type or 'dark'
+    _saved_theme = settings.get('theme', 'light')
+    _current_theme = st.context.theme.type or 'light'
     if _saved_theme != _current_theme:
         _apply_theme_js(_saved_theme)
 
