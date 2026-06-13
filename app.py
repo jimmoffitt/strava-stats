@@ -248,6 +248,25 @@ def _stats_box(items):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def _all_time_line(*, distance, hours, activities, seasons, best_year, highest, equity, avg):
+    """Render the uniform all-time stats line shared by the sport tabs.
+
+    Every sport shows the same eight slots in the same order; values are
+    pre-formatted display strings so each tab can express them in its own
+    native units (bike miles, snow vertical feet, swim meters, …).
+    """
+    _stats_box([
+        ("All-Time Distance", distance),
+        ("Hours",             hours),
+        ("Activities",        activities),
+        ("Seasons",           seasons),
+        ("Best Year",         best_year),
+        ("Highest Distance",  highest),
+        ("Equity Miles",      equity),
+        ("Avg Distance",      avg),
+    ])
+
+
 def _apply_theme_js(theme: str) -> None:
     """Push a theme preference ('dark' or 'light') into Streamlit's localStorage
     and reload the parent page so Streamlit picks it up natively.  Only triggers
@@ -531,16 +550,50 @@ def render_bike_heatmap_view(compact: bool = False):
 
 def render_bike_tab(bike_df, gear_map, settings):
     current_year = date.today().year
-    yearly_all = process_data.aggregate_by_year(bike_df)
+    _unit = st.session_state.get('bike_unit', 'Miles')
+    _is_mi = _unit == 'Miles'
 
-    # --- Top row: annual distance chart (left) + static heatmap thumbnail (right) ---
+    # Gear selection comes from session_state (the filter UI sits at the bottom).
+    gear_ids = sorted(
+        bike_df['gear_id'].unique().tolist(),
+        key=lambda g: gear_map.get(g, g or '') if g else '',
+    )
+    selected_gears = [
+        gid for gid in gear_ids
+        if st.session_state.get(f"bike_gear_{gid}", True)
+    ]
+    filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
+    yearly_all = process_data.aggregate_by_year(filtered_df)
+
+    # --- All-time stats line (top) ---
+    if not filtered_df.empty and not yearly_all.empty:
+        _du    = 'mi' if _is_mi else 'km'
+        _conv  = (lambda mi: mi) if _is_mi else (lambda mi: mi * 1.60934)
+        _tot   = yearly_all['miles'].sum()
+        _best  = yearly_all.loc[yearly_all['miles'].idxmax()]
+        _long  = filtered_df.loc[filtered_df['distance_miles'].idxmax()]
+        _ref   = settings.get('reference_sport', 'Bike')
+        _brate = settings.get('conversions', {}).get('bike_miles_per_ref_unit', 1.0)
+        _eq    = 0 if _ref == 'Bike' else (_tot / _brate if _brate else 0)
+        _all_time_line(
+            distance=f"{_conv(_tot):,.0f} {_du}",
+            hours=f"{yearly_all['hours'].sum():,.0f} h",
+            activities=f"{int(yearly_all['count'].sum()):,}",
+            seasons=str(filtered_df['year'].nunique()),
+            best_year=f"{int(_best['year'])} · {_conv(_best['miles']):,.0f} {_du}",
+            highest=f"{_conv(_long['distance_miles']):,.1f} {_du} · {_fmt_date(_long['start_date_local'])}",
+            equity=f"{_eq:,.0f}",
+            avg=f"{_conv(filtered_df['distance_miles'].mean()):,.1f} {_du}",
+        )
+
+    # --- Top row: annual distance chart (all bikes) + static heatmap thumbnail ---
     _chart_col, _thumb_col = st.columns([3, 1])
     with _chart_col:
-        if not yearly_all.empty:
-            _unit = st.session_state.get('bike_unit', 'Miles')
-            _dc, _dl = ('miles', 'Miles') if _unit == 'Miles' else ('km', 'Km')
+        _yearly_unfiltered = process_data.aggregate_by_year(bike_df)
+        if not _yearly_unfiltered.empty:
+            _dc, _dl = ('miles', 'Miles') if _is_mi else ('km', 'Km')
             st.plotly_chart(
-                make_year_dist_chart(yearly_all, _dc, _dl, current_year, height=220),
+                make_year_dist_chart(_yearly_unfiltered, _dc, _dl, current_year, height=220),
             )
     with _thumb_col:
         _static_map_path = os.path.join(config.IMAGES_DIR, 'bike_heat_map_all_time.png')
@@ -562,20 +615,6 @@ def render_bike_tab(bike_df, gear_map, settings):
 
     dist_col = 'miles' if unit == 'Miles' else 'km'
     dist_label = 'Miles' if unit == 'Miles' else 'Km'
-
-    gear_ids = sorted(
-        bike_df['gear_id'].unique().tolist(),
-        key=lambda g: gear_map.get(g, g or '') if g else '',
-    )
-
-    # Read gear selections from session state — default to all selected on first load
-    selected_gears = [
-        gid for gid in gear_ids
-        if st.session_state.get(f"bike_gear_{gid}", True)
-    ]
-    filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
-
-    yearly_all = process_data.aggregate_by_year(filtered_df)
 
     # --- Year mode: selector + two stats boxes + monthly chart ---
     if time_mode == "Year":
@@ -603,23 +642,6 @@ def render_bike_tab(bike_df, gear_map, settings):
                     ("Hours",                     f"{r['hours']:,.0f} h"),
                     ("Rides",                     f"{int(r['count']):,}"),
                 ])
-
-            # All-time stats box
-            all_max = filtered_df['distance_miles'].max() if not filtered_df.empty else 0
-            all_avg = filtered_df['distance_miles'].mean() if not filtered_df.empty else 0
-            all_dist = f"{yearly_all['miles'].sum():,.0f} mi" if dist_col == 'miles' \
-                       else f"{yearly_all['km'].sum():,.0f} km"
-            all_max_val = f"{all_max:,.1f} mi" if dist_col == 'miles' \
-                          else f"{all_max * 1.60934:,.1f} km"
-            all_avg_val = f"{all_avg:,.1f} mi" if dist_col == 'miles' \
-                          else f"{all_avg * 1.60934:,.1f} km"
-            _stats_box([
-                ("All-Time Distance",    all_dist),
-                ("All-Time Hours",       f"{yearly_all['hours'].sum():,.0f} h"),
-                ("All-Time Rides",       f"{int(yearly_all['count'].sum()):,}"),
-                ("Longest Ride (ever)",  all_max_val),
-                ("Avg Ride Distance",    all_avg_val),
-            ])
 
             # Distance by Month chart for selected year
             monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
@@ -682,6 +704,25 @@ def render_ski_tab(ski_df, settings):
 
     seasonal_df = _agg_ski_by_season(ski_df)
 
+    # --- All-time stats line (top). Snow measures "distance" in vertical feet. ---
+    if not seasonal_df.empty:
+        _all_vert     = seasonal_df['vert_ft'].sum()
+        _all_sessions = int(seasonal_df['sessions'].sum())
+        _best_season  = seasonal_df.loc[seasonal_df['vert_ft'].idxmax()]
+        _big          = ski_df.loc[ski_df['elevation_feet'].idxmax()]
+        _all_eq       = _all_vert / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
+        _avg_vert     = _all_vert / _all_sessions if _all_sessions else 0
+        _all_time_line(
+            distance=f"{_all_vert:,.0f} ft",
+            hours=f"{ski_df['moving_time'].sum() / 3600:,.0f} h",
+            activities=f"{_all_sessions:,}",
+            seasons=str(len(seasonal_df)),
+            best_year=f"{_best_season['season_label']} · {_best_season['vert_ft']:,.0f} ft",
+            highest=f"{_big['elevation_feet']:,.0f} ft · {_fmt_date(_big['start_date_local'])}",
+            equity=f"{_all_eq:,.0f}",
+            avg=f"{_avg_vert:,.0f} ft",
+        )
+
     # --- 1. Top row: all-seasons overview chart (left) + snow image (right) ---
     _chart_col, _img_col = st.columns([3, 1])
     with _chart_col:
@@ -734,22 +775,6 @@ def render_ski_tab(ski_df, settings):
             f"</div>",
             unsafe_allow_html=True,
         )
-
-    # All-time stats box
-    best_season_row = seasonal_df.loc[seasonal_df['vert_ft'].idxmax()]
-    all_vert      = seasonal_df['vert_ft'].sum()
-    all_days      = int(seasonal_df['days'].sum())
-    all_sessions  = int(seasonal_df['sessions'].sum())
-    all_seasons   = len(seasonal_df)
-    all_eq_miles  = all_vert / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
-    _stats_box([
-        ("All-Time Seasons",   str(all_seasons)),
-        ("All-Time Vert",      f"{all_vert:,.0f} ft"),
-        ("All-Time Days",      str(all_days)),
-        ("All-Time Sessions",  str(all_sessions)),
-        ("Best Season",        f"{best_season_row['season_label']}  {best_season_row['vert_ft']:,.0f} ft"),
-        ("All-Time Eq Miles",  f"{all_eq_miles:,.0f} mi"),
-    ])
 
     # --- 4. Vert by Month chart (season months, spanning both calendar years) ---
     monthly_season = _agg_ski_season_by_month(ski_df, selected_key, ski_start, ski_end)
@@ -828,12 +853,38 @@ def render_swim_tab(swim_df, settings, df=None):
     swim_end   = seasons.get('swim_end_month', 9)
     current_year = date.today().year
 
-    # --- 1. Top row: multi-year overview chart (left) + pool image (right) ---
+    # --- 1. All-time stats line (top of tab) ---
     yearly = _agg_swim_by_year(swim_df)
+    # Units are chosen by the radio further down; read the current choice from
+    # session_state so this top line already reflects it on rerun.
+    _unit   = st.session_state.get('swim_unit', 'Meters')
+    _mult   = 1.0 if _unit == 'Meters' else 1.09361
+    _dlabel = 'm' if _unit == 'Meters' else 'yd'
+    if not yearly.empty:
+        _all_m    = yearly['meters'].sum()
+        _all_sw   = int(yearly['swims'].sum())
+        _best     = yearly.loc[yearly['meters'].idxmax()]
+        _long     = swim_df.loc[swim_df['distance'].idxmax()]
+        _swim_per = settings.get('conversions', {}).get(
+            'swim_meters_per_ref_unit',
+            settings.get('conversions', {}).get('swim_meters_per_mile', 100))
+        _eq       = _all_m / _swim_per if _swim_per else 0
+        _avg      = (_all_m / _all_sw) if _all_sw else 0
+        _all_time_line(
+            distance=f"{_all_m * _mult:,.0f} {_dlabel}",
+            hours=f"{swim_df['moving_time'].sum() / 3600:,.0f} h",
+            activities=f"{_all_sw:,}",
+            seasons=str(swim_df['year'].nunique()),
+            best_year=f"{int(_best['year'])} · {_best['meters'] * _mult:,.0f} {_dlabel}",
+            highest=f"{_long['distance'] * _mult:,.0f} {_dlabel} · {_fmt_date(_long['start_date_local'])}",
+            equity=f"{_eq:,.0f}",
+            avg=f"{_avg * _mult:,.0f} {_dlabel}",
+        )
+
+    # --- 2. Multi-year overview chart (left) + pool image (right) ---
     _chart_col, _img_col = st.columns([3, 1])
     with _chart_col:
         if not yearly.empty:
-            _unit = st.session_state.get('swim_unit', 'Meters')
             _dc = 'meters' if _unit == 'Meters' else 'yards'
             yearly_plot = yearly.rename(columns={_dc: '_dist'})[['year', 'swims', '_dist']].copy()
             yearly_plot.columns = ['year', 'swims', _dc]
@@ -845,7 +896,7 @@ def render_swim_tab(swim_df, settings, df=None):
         if os.path.exists(_img_path):
             st.image(_img_path, width="stretch")
 
-    # --- 2. Controls ---
+    # --- 3. Controls ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
@@ -872,7 +923,7 @@ def render_swim_tab(swim_df, settings, df=None):
         .drop(columns='_order')
     )
 
-    # --- 3. Stats bar (under controls, before charts) ---
+    # --- 4. Selected-year stats + goal pace ---
     year_row = yearly[yearly['year'] == selected_year]
     if not year_row.empty:
         row = year_row.iloc[0]
@@ -901,32 +952,29 @@ def render_swim_tab(swim_df, settings, df=None):
                 unsafe_allow_html=True,
             )
 
-        # All-time stats box
-        all_dist_m   = yearly['meters'].sum()
-        all_swims    = int(yearly['swims'].sum())
-        best_yr_row  = yearly.loc[yearly['meters'].idxmax()]
-        all_max_swim = swim_df['distance'].max() * mult if not swim_df.empty else 0
-        all_avg_swim = (all_dist_m / all_swims * mult) if all_swims else 0
-        _stats_box([
-            ("All-Time Distance", f"{all_dist_m * mult:,.0f} {dist_label}"),
-            ("All-Time Swims",    str(all_swims)),
-            ("Best Year",         f"{int(best_yr_row['year'])}  {best_yr_row['meters'] * mult:,.0f} {dist_label}"),
-            ("Longest Swim",      f"{all_max_swim:,.0f} {dist_label}"),
-            ("Avg per Swim",      f"{all_avg_swim:,.0f} {dist_label}"),
-        ])
-
-    # --- 4. Monthly chart ---
+    # --- 5. Monthly chart (reflects the selected year) ---
     st.plotly_chart(
         make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL),
     )
 
+    # --- 6. Table of contents for the list sections below ---
+    st.markdown(
+        f"<div style='margin:6px 0 2px;font-size:13px'>"
+        f"<strong>Jump to:</strong> &nbsp;"
+        f"<a href='#most-recent-swims' style='color:{SWIM_TEAL};text-decoration:none'>Most Recent Swims</a>"
+        f" &nbsp;·&nbsp; "
+        f"<a href='#longest-swims' style='color:{SWIM_TEAL};text-decoration:none'>Longest Swims</a>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
     fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
 
-    # --- 5. Most Recent Swims ---
+    # --- 7. Most Recent Swims ---
     st.divider()
     _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim", widget="number")
 
-    # --- 6. Longest Swims ---
+    # --- 8. Longest Swims ---
     st.divider()
     _render_longest_table(swim_df, 'distance', fmt_swim, "Longest Swims")
 
@@ -944,6 +992,19 @@ def render_equity_tab(df, settings):
     today = date.today()
     current_year = today.year
     yearly = process_data.aggregate_equity_by_year(df, settings)
+
+    # --- All-time stats line (top): total + each sport's contribution ---
+    if not yearly.empty:
+        all_total = yearly['total'].sum()
+        all_items = [("All-Time Equity Miles", f"{all_total:,.0f}")]
+        for col, label in [('bike','Bike'), ('run','Run'), ('ski','Ski'), ('swim','Swim'),
+                           ('hike','Hike'), ('paddle','Paddle'), ('custom','Custom')]:
+            if col in yearly.columns:
+                all_val = yearly[col].sum()
+                if all_val > 0.5:
+                    all_pct = f" ({all_val / all_total * 100:.0f}%)" if all_total else ""
+                    all_items.append((label, f"{all_val:,.0f} mi{all_pct}"))
+        _stats_box(all_items)
 
     # --- 1. Thin, wide multi-year overview chart ---
     st.plotly_chart(
@@ -974,18 +1035,6 @@ def render_equity_tab(df, settings):
             if val > 0.5:
                 sport_items.append((label, f"{val:,.0f} mi{pct(val)}"))
     _stats_box(sport_items)
-
-    # All-time stats box
-    all_total = yearly['total'].sum()
-    all_items = [("All-Time Equity Miles", f"{all_total:,.0f}")]
-    for col, label in [('bike','Bike'), ('run','Run'), ('ski','Ski'), ('swim','Swim'),
-                       ('hike','Hike'), ('paddle','Paddle'), ('custom','Custom')]:
-        if col in yearly.columns:
-            all_val = yearly[col].sum()
-            if all_val > 0.5:
-                all_pct = f" ({all_val / all_total * 100:.0f}%)" if all_total else ""
-                all_items.append((label, f"{all_val:,.0f} mi{all_pct}"))
-    _stats_box(all_items)
 
     if annual_goal:
         prog = min(total_eq / annual_goal, 1.0)
