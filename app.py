@@ -1797,71 +1797,50 @@ def render_data_sync():
 
 
 # ---------------------------------------------------------------------------
-# Settings tab
+# Settings sections (one sidebar page each)
 # ---------------------------------------------------------------------------
-def render_settings_tab(settings):
-    conv         = settings.get('conversions', {})
-    goals        = settings.get('goals', {})
+def _write_settings(new_settings, new_theme, old_theme):
+    """Persist the full settings dict, clear the cache, and refresh. Flips the
+    theme via JS only when it actually changed; otherwise confirms and reruns."""
+    with open(config.SETTINGS_FILE, 'w') as f:
+        json.dump(new_settings, f, indent=2)
+    load_settings.clear()
+    if new_theme != old_theme:
+        _apply_theme_js(new_theme)
+    else:
+        st.success("Settings saved.")
+        st.rerun()
+
+
+def render_settings_section(settings, section):
+    """Render one settings section as a standalone sidebar page.
+
+    Each section reads its values straight from saved settings via value=/index=
+    (a keyed widget loses its session_state once its page stops rendering, so
+    seeding from session is unreliable once the sections are separate pages) and
+    has its own Save button that merges just its slice into settings.json.
+    Unsaved edits are intentionally dropped when you navigate away.
+    """
+    import copy
+    conv          = settings.get('conversions', {})
+    goals         = settings.get('goals', {})
     saved_seasons = settings.get('seasons', {})
-    saved_home   = settings.get('home_location', {})
-    saved_images = settings.get('images', {}) or {}
-
-    # --- Seed all session-state keys upfront ---
-    # Must happen before sub-tabs render so the Save button can read from
-    # st.session_state even when a sub-tab's widgets are not currently visible.
-    ref_options = ["Bike", "Run", "Hike"]
-
-    if st.session_state.get('settings_theme') not in ['dark', 'light']:
-        st.session_state['settings_theme'] = settings.get('theme', 'light')
-
-    _cur_ref = st.session_state.get('settings_ref_sport')
-    if _cur_ref not in ref_options:
-        _saved_ref = settings.get('reference_sport', 'Bike')
-        st.session_state['settings_ref_sport'] = _saved_ref if _saved_ref in ref_options else 'Bike'
-
-    for _k, _v in [
-        ('settings_bike_rate',    float(conv.get('bike_miles_per_ref_unit', 1.0))),
-        ('settings_run_rate',     float(conv.get('run_miles_per_ref_unit', 1.0))),
-        ('settings_hike_rate',    float(conv.get('hike_miles_per_ref_unit', 3.0))),
-        ('settings_paddle_rate',  float(conv.get('paddle_miles_per_ref_unit', 2.0))),
-        ('settings_swim_rate',    int(conv.get('swim_meters_per_ref_unit', conv.get('swim_meters_per_mile', 100)))),
-        ('settings_ski_rate',     int(conv.get('ski_vert_per_ref_unit', conv.get('ski_vert_per_mile', 1000)))),
-        ('settings_annual_eq',    goals.get('annual_equity_miles', 3000)),
-        ('settings_monthly_eq',   goals.get('monthly_equity_miles', 250)),
-        ('settings_ski_goal',     goals.get('ski_season_vert_ft', 200000)),
-        ('settings_swim_goal',    goals.get('swim_monthly_meters', 10000)),
-        ('settings_monthly_total_target', float(goals.get('monthly_total_target_miles', 200))),
-        ('settings_bike_monthly_miles',   float(goals.get('bike_monthly_miles', 150))),
-        ('settings_snow_image_path',      saved_images.get('snow_path') or ''),
-        ('settings_swim_image_path',      saved_images.get('swim_path') or ''),
-        ('settings_home_enabled', bool(saved_home.get('enabled', False))),
-        ('settings_home_lat',     float(saved_home['lat']) if saved_home.get('lat') is not None else 40.0),
-        ('settings_home_lon',     float(saved_home['lon']) if saved_home.get('lon') is not None else -105.0),
-    ]:
-        if _k not in st.session_state:
-            st.session_state[_k] = _v
-
-    _month_nums  = list(range(1, 13))
-    for _k, _field, _default in [
-        ('settings_ski_start_month',  'ski_start_month',  11),
-        ('settings_ski_end_month',    'ski_end_month',     5),
-        ('settings_swim_start_month', 'swim_start_month',  5),
-        ('settings_swim_end_month',   'swim_end_month',    9),
-    ]:
-        if _k not in st.session_state:
-            st.session_state[_k] = saved_seasons.get(_field, _default)
-
+    saved_home    = settings.get('home_location', {})
+    saved_images  = settings.get('images', {}) or {}
+    ref_options   = ["Bike", "Run", "Hike"]
     _bike_mode_options = ['fixed', 'derived']
-    if st.session_state.get('settings_bike_monthly_mode') not in _bike_mode_options:
-        st.session_state['settings_bike_monthly_mode'] = goals.get('bike_monthly_mode', 'derived')
+    _month_nums   = list(range(1, 13))
+    _month_names  = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-    # ---- Sub-tabs as navigation TOC ----
-    stab_sports, stab_goals, stab_seasons, stab_map, stab_appear = st.tabs(
-        ["Sport equity", "Goals", "Seasons", "Map", "Appearance"]
-    )
+    def _save(**section_overrides):
+        new = copy.deepcopy(settings)
+        new.update(section_overrides)
+        _write_settings(new, new.get('theme', 'light'),
+                        settings.get('theme', 'light'))
 
     # ---- Sports ----
-    with stab_sports:
+    if section == "sports":
         st.subheader("Reference Sport")
         st.caption(
             "Equity miles are expressed in units of this sport. "
@@ -1870,223 +1849,264 @@ def render_settings_tab(settings):
             "feet) — their conversion rates below always express how many native "
             "units equal one equity mile."
         )
-        st.radio(
+        _saved_ref = settings.get('reference_sport', 'Bike')
+        ref_sport = st.radio(
             "Reference sport", ref_options,
+            index=ref_options.index(_saved_ref) if _saved_ref in ref_options else 0,
             horizontal=True,
             key="settings_ref_sport",
         )
-        _active_ref = st.session_state.get('settings_ref_sport', 'Bike')
-        _saved_ref  = settings.get('reference_sport', 'Bike')
-        if _active_ref != _saved_ref:
+        if ref_sport != _saved_ref:
             st.warning(
-                f"Reference sport changed from **{_saved_ref}** to **{_active_ref}**. "
+                f"Reference sport changed from **{_saved_ref}** to **{ref_sport}**. "
                 "Review the conversion rates below to make sure they still reflect "
                 "your effort equivalences, then hit Save."
             )
 
         st.divider()
         st.subheader("Equity Mile Conversions")
-        st.caption(f"How many native units = 1 {_active_ref} equity mile.")
+        st.caption(f"How many native units = 1 {ref_sport} equity mile.")
 
         dcol_bike, dcol_run, dcol_hike, dcol_paddle = st.columns(4)
         with dcol_bike:
             st.markdown("**Bike**")
-            if _active_ref == 'Bike':
-                st.caption("Reference")
-                st.markdown("1 mi = 1 equity mi")
-                st.session_state['settings_bike_rate'] = 1.0
+            if ref_sport == 'Bike':
+                st.caption("Reference"); st.markdown("1 mi = 1 equity mi"); bike_rate = 1.0
             else:
-                st.number_input(
+                bike_rate = st.number_input(
                     "miles = 1 equity mi", min_value=0.1, max_value=100.0,
                     step=0.5, format="%.1f", key="settings_bike_rate",
+                    value=float(conv.get('bike_miles_per_ref_unit', 1.0)),
                 )
         with dcol_run:
             st.markdown("**Run**")
-            if _active_ref == 'Run':
-                st.caption("Reference")
-                st.markdown("1 mi = 1 equity mi")
-                st.session_state['settings_run_rate'] = 1.0
+            if ref_sport == 'Run':
+                st.caption("Reference"); st.markdown("1 mi = 1 equity mi"); run_rate = 1.0
             else:
-                st.number_input(
+                run_rate = st.number_input(
                     "miles = 1 equity mi", min_value=0.1, max_value=100.0,
                     step=0.5, format="%.1f", key="settings_run_rate",
+                    value=float(conv.get('run_miles_per_ref_unit', 1.0)),
                 )
         with dcol_hike:
             st.markdown("**Hike / Walk**")
-            if _active_ref == 'Hike':
-                st.caption("Reference")
-                st.markdown("1 mi = 1 equity mi")
-                st.session_state['settings_hike_rate'] = 1.0
+            if ref_sport == 'Hike':
+                st.caption("Reference"); st.markdown("1 mi = 1 equity mi"); hike_rate = 1.0
             else:
-                st.number_input(
+                hike_rate = st.number_input(
                     "miles = 1 equity mi", min_value=0.1, max_value=100.0,
                     step=0.5, format="%.1f", key="settings_hike_rate",
+                    value=float(conv.get('hike_miles_per_ref_unit', 3.0)),
                 )
         with dcol_paddle:
             st.markdown("**Paddle**")
-            st.number_input(
+            paddle_rate = st.number_input(
                 "miles = 1 equity mi", min_value=0.1, max_value=100.0,
                 step=0.5, format="%.1f", key="settings_paddle_rate",
+                value=float(conv.get('paddle_miles_per_ref_unit', 2.0)),
             )
 
         scol_swim, scol_ski = st.columns(2)
         with scol_swim:
             st.markdown("**Swim**")
-            st.number_input(
-                "meters = 1 equity mi",
-                min_value=1, max_value=10000, step=10,
+            swim_rate = st.number_input(
+                "meters = 1 equity mi", min_value=1, max_value=10000, step=10,
                 key="settings_swim_rate",
+                value=int(conv.get('swim_meters_per_ref_unit', conv.get('swim_meters_per_mile', 100))),
             )
         with scol_ski:
             st.markdown("**Ski**")
-            st.number_input(
-                "vertical feet = 1 equity mi",
-                min_value=100, max_value=100000, step=100,
+            ski_rate = st.number_input(
+                "vertical feet = 1 equity mi", min_value=100, max_value=100000, step=100,
                 key="settings_ski_rate",
+                value=int(conv.get('ski_vert_per_ref_unit', conv.get('ski_vert_per_mile', 1000))),
+            )
+
+        st.divider()
+        if st.button("Save settings", type="primary"):
+            _save(
+                reference_sport=ref_sport,
+                conversions={
+                    'bike_miles_per_ref_unit':   bike_rate,
+                    'run_miles_per_ref_unit':    run_rate,
+                    'hike_miles_per_ref_unit':   hike_rate,
+                    'paddle_miles_per_ref_unit': paddle_rate,
+                    'swim_meters_per_ref_unit':  swim_rate,
+                    'ski_vert_per_ref_unit':     ski_rate,
+                },
             )
 
     # ---- Goals ----
-    with stab_goals:
+    elif section == "goals":
         st.subheader("Goals")
         st.markdown("**Equity Miles**")
         gcol_annual, gcol_monthly = st.columns(2)
         with gcol_annual:
-            st.number_input(
-                "Annual equity miles",
-                min_value=0, max_value=100000, step=100,
+            annual_eq = st.number_input(
+                "Annual equity miles", min_value=0, max_value=100000, step=100,
                 key="settings_annual_eq",
+                value=int(goals.get('annual_equity_miles', 3000)),
             )
         with gcol_monthly:
-            st.number_input(
-                "Monthly equity miles",
-                min_value=0, max_value=10000, step=10,
+            monthly_eq = st.number_input(
+                "Monthly equity miles", min_value=0, max_value=10000, step=10,
                 key="settings_monthly_eq",
+                value=int(goals.get('monthly_equity_miles', 250)),
             )
 
         st.markdown("**Sport-Specific**")
         gcol_ski, gcol_swim = st.columns(2)
         with gcol_ski:
-            st.number_input(
+            ski_goal = st.number_input(
                 "Ski season vertical feet (cumulative)",
                 min_value=0, max_value=10000000, step=10000,
                 key="settings_ski_goal",
+                value=int(goals.get('ski_season_vert_ft', 200000)),
             )
         with gcol_swim:
-            st.number_input(
-                "Swim monthly meters",
-                min_value=0, max_value=1000000, step=500,
+            swim_goal = st.number_input(
+                "Swim monthly meters", min_value=0, max_value=1000000, step=500,
                 key="settings_swim_goal",
+                value=int(goals.get('swim_monthly_meters', 10000)),
             )
 
         st.markdown("**Bike Monthly Miles**")
-        st.radio(
-            "Goal mode",
-            _bike_mode_options,
+        _saved_mode = goals.get('bike_monthly_mode', 'derived')
+        bike_mode = st.radio(
+            "Goal mode", _bike_mode_options,
+            index=_bike_mode_options.index(_saved_mode) if _saved_mode in _bike_mode_options else 1,
             horizontal=True,
             format_func=lambda m: 'Fixed value' if m == 'fixed' else 'Derived from total target',
             key="settings_bike_monthly_mode",
         )
-        if st.session_state.get('settings_bike_monthly_mode') == 'fixed':
-            st.number_input(
-                "Bike monthly miles",
-                min_value=0.0, max_value=10000.0, step=10.0, format="%.0f",
-                key="settings_bike_monthly_miles",
+        bike_monthly_miles  = float(goals.get('bike_monthly_miles', 150))
+        monthly_total_target = float(goals.get('monthly_total_target_miles', 200))
+        if bike_mode == 'fixed':
+            bike_monthly_miles = st.number_input(
+                "Bike monthly miles", min_value=0.0, max_value=10000.0,
+                step=10.0, format="%.0f",
+                key="settings_bike_monthly_miles", value=bike_monthly_miles,
             )
         else:
-            st.number_input(
+            monthly_total_target = st.number_input(
                 "Monthly total target (bike miles)",
                 min_value=0.0, max_value=10000.0, step=10.0, format="%.0f",
-                key="settings_monthly_total_target",
+                key="settings_monthly_total_target", value=monthly_total_target,
             )
             st.caption(
                 "Each month's bike target = total − swim equivalent (swim-season months) "
                 "− ski equivalent (ski-season months, spread evenly). Equivalents use the "
-                "conversion rates in the Sports tab."
+                "conversion rates and season months from the other Settings pages."
             )
             preview = process_data.bike_monthly_goal_series({
                 **settings,
                 'goals': {
                     **goals,
-                    'monthly_total_target_miles': st.session_state.get('settings_monthly_total_target', 200),
-                    'ski_season_vert_ft':         st.session_state.get('settings_ski_goal', 0),
-                    'swim_monthly_meters':        st.session_state.get('settings_swim_goal', 0),
-                },
-                'seasons': {
-                    'ski_start_month':  st.session_state.get('settings_ski_start_month', 11),
-                    'ski_end_month':    st.session_state.get('settings_ski_end_month', 5),
-                    'swim_start_month': st.session_state.get('settings_swim_start_month', 5),
-                    'swim_end_month':   st.session_state.get('settings_swim_end_month', 9),
+                    'monthly_total_target_miles': monthly_total_target,
+                    'ski_season_vert_ft':         ski_goal,
+                    'swim_monthly_meters':        swim_goal,
                 },
             })
-            _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
             st.dataframe(
-                {'Month': _months, 'Bike target (mi)': [round(v) for v in preview]},
+                {'Month': _month_names, 'Bike target (mi)': [round(v) for v in preview]},
                 hide_index=True, width="stretch",
             )
 
+        st.divider()
+        if st.button("Save settings", type="primary"):
+            _save(goals={
+                'annual_equity_miles':        annual_eq,
+                'monthly_equity_miles':       monthly_eq,
+                'ski_season_vert_ft':         ski_goal,
+                'swim_monthly_meters':        swim_goal,
+                'monthly_total_target_miles': monthly_total_target,
+                'bike_monthly_mode':          bike_mode,
+                'bike_monthly_miles':         bike_monthly_miles,
+            })
+
     # ---- Seasons ----
-    with stab_seasons:
+    elif section == "seasons":
         st.subheader("Season Months")
         st.caption("Controls which months appear in the monthly chart on each sport tab.")
 
-        _month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        def _month_index(field, default):
+            m = saved_seasons.get(field, default)
+            return _month_nums.index(m) if m in _month_nums else default - 1
 
         smcol_ski, smcol_swim = st.columns(2)
         with smcol_ski:
             st.markdown("**Ski season**")
-            st.selectbox(
-                "Start month", _month_nums,
-                format_func=lambda m: _month_names[m - 1],
-                key="settings_ski_start_month",
+            ski_start = st.selectbox(
+                "Start month", _month_nums, index=_month_index('ski_start_month', 11),
+                format_func=lambda m: _month_names[m - 1], key="settings_ski_start_month",
             )
-            st.selectbox(
-                "End month", _month_nums,
-                format_func=lambda m: _month_names[m - 1],
-                key="settings_ski_end_month",
+            ski_end = st.selectbox(
+                "End month", _month_nums, index=_month_index('ski_end_month', 5),
+                format_func=lambda m: _month_names[m - 1], key="settings_ski_end_month",
             )
         with smcol_swim:
             st.markdown("**Swim season**")
-            st.selectbox(
-                "Start month", _month_nums,
-                format_func=lambda m: _month_names[m - 1],
-                key="settings_swim_start_month",
+            swim_start = st.selectbox(
+                "Start month", _month_nums, index=_month_index('swim_start_month', 5),
+                format_func=lambda m: _month_names[m - 1], key="settings_swim_start_month",
             )
-            st.selectbox(
-                "End month", _month_nums,
-                format_func=lambda m: _month_names[m - 1],
-                key="settings_swim_end_month",
+            swim_end = st.selectbox(
+                "End month", _month_nums, index=_month_index('swim_end_month', 9),
+                format_func=lambda m: _month_names[m - 1], key="settings_swim_end_month",
             )
 
+        st.divider()
+        if st.button("Save settings", type="primary"):
+            _save(seasons={
+                'ski_start_month':  ski_start,
+                'ski_end_month':    ski_end,
+                'swim_start_month': swim_start,
+                'swim_end_month':   swim_end,
+            })
+
     # ---- Map ----
-    with stab_map:
+    elif section == "map":
         st.subheader("Home Location")
         st.caption(
             "When enabled, the bike heatmap centers on your home location instead of "
             "the median of your ride start points."
         )
-        st.checkbox("Use custom home location for heatmap", key="settings_home_enabled")
-        if st.session_state.get('settings_home_enabled'):
+        home_enabled = st.checkbox(
+            "Use custom home location for heatmap", key="settings_home_enabled",
+            value=bool(saved_home.get('enabled', False)),
+        )
+        home_lat = float(saved_home['lat']) if saved_home.get('lat') is not None else 40.0
+        home_lon = float(saved_home['lon']) if saved_home.get('lon') is not None else -105.0
+        if home_enabled:
             hm_col_lat, hm_col_lon = st.columns(2)
             with hm_col_lat:
-                st.number_input(
+                home_lat = st.number_input(
                     "Latitude", min_value=-90.0, max_value=90.0,
-                    step=0.0001, format="%.6f",
-                    key="settings_home_lat",
+                    step=0.0001, format="%.6f", key="settings_home_lat", value=home_lat,
                 )
             with hm_col_lon:
-                st.number_input(
+                home_lon = st.number_input(
                     "Longitude", min_value=-180.0, max_value=180.0,
-                    step=0.0001, format="%.6f",
-                    key="settings_home_lon",
+                    step=0.0001, format="%.6f", key="settings_home_lon", value=home_lon,
                 )
             st.caption("Tip: right-click any location in Google Maps → 'What's here?' to copy coordinates.")
 
+        st.divider()
+        if st.button("Save settings", type="primary"):
+            _save(home_location={
+                'enabled': home_enabled,
+                'lat': home_lat if home_enabled else None,
+                'lon': home_lon if home_enabled else None,
+            })
+
     # ---- Appearance ----
-    with stab_appear:
+    elif section == "appearance":
+        _theme_opts = ['dark', 'light']
+        _saved_theme = settings.get('theme', 'light')
         st.subheader("Theme")
-        st.radio(
-            "Appearance", ['dark', 'light'],
+        theme = st.radio(
+            "Appearance", _theme_opts,
+            index=_theme_opts.index(_saved_theme) if _saved_theme in _theme_opts else 1,
             horizontal=True,
             format_func=lambda x: 'Dark' if x == 'dark' else 'Light',
             key='settings_theme',
@@ -2097,82 +2117,37 @@ def render_settings_tab(settings):
         st.subheader("Sport tab images")
         _img_col_snow, _img_col_swim = st.columns(2)
         with _img_col_snow:
-            st.text_input(
+            snow_path = st.text_input(
                 "Snow image path (blank = default)",
-                key="settings_snow_image_path",
+                key="settings_snow_image_path", value=saved_images.get('snow_path') or '',
                 placeholder=config.SNOW_DEFAULT_IMAGE,
             )
-            _snow_preview = st.session_state.get('settings_snow_image_path') or config.SNOW_DEFAULT_IMAGE
+            _snow_preview = snow_path or config.SNOW_DEFAULT_IMAGE
             if os.path.exists(_snow_preview):
                 st.image(_snow_preview, width=180)
             else:
                 st.caption(f"⚠ File not found: {_snow_preview}")
         with _img_col_swim:
-            st.text_input(
+            swim_path = st.text_input(
                 "Swim image path (blank = default)",
-                key="settings_swim_image_path",
+                key="settings_swim_image_path", value=saved_images.get('swim_path') or '',
                 placeholder=config.SWIM_DEFAULT_IMAGE,
             )
-            _swim_preview = st.session_state.get('settings_swim_image_path') or config.SWIM_DEFAULT_IMAGE
+            _swim_preview = swim_path or config.SWIM_DEFAULT_IMAGE
             if os.path.exists(_swim_preview):
                 st.image(_swim_preview, width=180)
             else:
                 st.caption(f"⚠ File not found: {_swim_preview}")
 
-    # ---- Save (outside sub-tabs) ----
-    st.divider()
-    if st.button("Save settings", type="primary"):
-        _new_theme  = st.session_state.get('settings_theme', 'light')
-        _old_theme  = settings.get('theme', 'light')
-        _ref_sport  = st.session_state.get('settings_ref_sport', 'Bike')
-        _home_enabled = st.session_state.get('settings_home_enabled', False)
-        _home_lat   = st.session_state.get('settings_home_lat', None)
-        _home_lon   = st.session_state.get('settings_home_lon', None)
-
-        updated = {
-            'theme': _new_theme,
-            'reference_sport': _ref_sport,
-            'conversions': {
-                'bike_miles_per_ref_unit':   st.session_state.get('settings_bike_rate', 1.0),
-                'run_miles_per_ref_unit':    st.session_state.get('settings_run_rate', 1.0),
-                'hike_miles_per_ref_unit':   st.session_state.get('settings_hike_rate', 3.0),
-                'paddle_miles_per_ref_unit': st.session_state.get('settings_paddle_rate', 2.0),
-                'swim_meters_per_ref_unit':  st.session_state.get('settings_swim_rate', 100),
-                'ski_vert_per_ref_unit':     st.session_state.get('settings_ski_rate', 1000),
-            },
-            'goals': {
-                'annual_equity_miles':  st.session_state.get('settings_annual_eq', 3000),
-                'monthly_equity_miles': st.session_state.get('settings_monthly_eq', 250),
-                'ski_season_vert_ft':   st.session_state.get('settings_ski_goal', 200000),
-                'swim_monthly_meters':  st.session_state.get('settings_swim_goal', 10000),
-                'monthly_total_target_miles': st.session_state.get('settings_monthly_total_target', 200),
-                'bike_monthly_mode':         st.session_state.get('settings_bike_monthly_mode', 'derived'),
-                'bike_monthly_miles':        st.session_state.get('settings_bike_monthly_miles', 150),
-            },
-            'seasons': {
-                'ski_start_month':  st.session_state.get('settings_ski_start_month', 11),
-                'ski_end_month':    st.session_state.get('settings_ski_end_month', 5),
-                'swim_start_month': st.session_state.get('settings_swim_start_month', 5),
-                'swim_end_month':   st.session_state.get('settings_swim_end_month', 9),
-            },
-            'home_location': {
-                'enabled': _home_enabled,
-                'lat': _home_lat if _home_enabled else None,
-                'lon': _home_lon if _home_enabled else None,
-            },
-            'images': {
-                'snow_path': (st.session_state.get('settings_snow_image_path') or '').strip() or None,
-                'swim_path': (st.session_state.get('settings_swim_image_path') or '').strip() or None,
-            },
-        }
-        with open(config.SETTINGS_FILE, 'w') as f:
-            json.dump(updated, f, indent=2)
-        load_settings.clear()
-        if _new_theme != _old_theme:
-            _apply_theme_js(_new_theme)
-        else:
-            st.success("Settings saved.")
-            st.rerun()
+        st.divider()
+        if st.button("Save settings", type="primary"):
+            _save(
+                theme=theme,
+                images={
+                    'snow_path': (snow_path or '').strip() or None,
+                    'swim_path': (swim_path or '').strip() or None,
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2221,7 +2196,11 @@ def _p_combined(): render_equity_tab(df, settings)
 def _p_wrapped():  render_wrapped_tab(df, settings, athlete_profile)
 def _p_explore():  render_explore_tab(df, gear_map)
 def _p_export():   render_export_tab(df, settings)
-def _p_settings(): render_settings_tab(settings)
+def _p_set_sports():  render_settings_section(settings, "sports")
+def _p_set_goals():   render_settings_section(settings, "goals")
+def _p_set_seasons(): render_settings_section(settings, "seasons")
+def _p_set_map():     render_settings_section(settings, "map")
+def _p_set_appear():  render_settings_section(settings, "appearance")
 
 # Open on the reference sport's view. Among the reference options (Bike/Run/Hike)
 # only Bike has a dedicated view, so Run/Hike fall back to Bike.
@@ -2242,8 +2221,14 @@ _tools_pages = [
     _page(_p_explore, "Explore", "🔍", "explore"),
     _page(_p_export,  "Export",  "📤", "export"),
 ]
+# Settings expands into one page per section, listed independently in the
+# sidebar (iconless, to match the View/Tools sports' visual grouping).
 _settings_pages = [
-    _page(_p_settings, "Settings", "⚙️", "settings"),
+    _page(_p_set_sports,  "Sport equity", None, "settings-sport"),
+    _page(_p_set_goals,   "Goals",        None, "settings-goals"),
+    _page(_p_set_seasons, "Seasons",      None, "settings-seasons"),
+    _page(_p_set_map,     "Map",          None, "settings-map"),
+    _page(_p_set_appear,  "Appearance",   None, "settings-appearance"),
 ]
 
 pg = st.navigation(
