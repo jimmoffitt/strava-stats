@@ -783,6 +783,19 @@ def render_ski_tab(ski_df, settings):
             make_monthly_chart(monthly_season, 'vert_ft', 'ft', color=SKI_BLUE),
         )
 
+    # --- 4b. Table of contents for the list sections below ---
+    st.markdown(
+        f"<div style='margin:6px 0 2px;font-size:13px'>"
+        f"<strong>Jump to:</strong> &nbsp;"
+        f"<a href='#most-recent-snow-activities' style='color:{SKI_BLUE};text-decoration:none'>Most Recent Snow Activities</a>"
+        f" &nbsp;·&nbsp; "
+        f"<a href='#biggest-snow-days-all-seasons' style='color:{SKI_BLUE};text-decoration:none'>Biggest Snow Days</a>"
+        f" &nbsp;·&nbsp; "
+        f"<a href='#snow-days' style='color:{SKI_BLUE};text-decoration:none'>Snow Days</a>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
     # --- 5. Most Recent Snow Activities ---
     st.divider()
     _render_recent_table(
