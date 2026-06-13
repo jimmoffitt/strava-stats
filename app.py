@@ -23,6 +23,8 @@ from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
     SKI_BLUE,
+    SWIM_TEAL,
+    SWIM_TEAL_LIGHT,
     make_bike_heatmap,
     make_equity_annual_chart,
     make_equity_monthly_chart,
@@ -890,8 +892,14 @@ def render_swim_tab(swim_df, settings, df=None):
         ])
         if goal_val > 0:
             progress = min(avg_monthly / goal_val, 1.0)
-            st.progress(progress,
-                text=f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)")
+            st.markdown(
+                f"<div style='font-size:13px;margin:6px 0 4px'>"
+                f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)</div>"
+                f"<div style='background:{SWIM_TEAL_LIGHT};border-radius:4px;height:8px;overflow:hidden'>"
+                f"<div style='width:{progress*100:.1f}%;background:{SWIM_TEAL};height:100%'></div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         # All-time stats box
         all_dist_m   = yearly['meters'].sum()
@@ -909,14 +917,14 @@ def render_swim_tab(swim_df, settings, df=None):
 
     # --- 4. Monthly chart ---
     st.plotly_chart(
-        make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val),
+        make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL),
     )
 
     fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
 
     # --- 5. Most Recent Swims ---
     st.divider()
-    _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim")
+    _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim", widget="number")
 
     # --- 6. Longest Swims ---
     st.divider()
@@ -2153,8 +2161,6 @@ def render_settings_section(settings, section):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-st.title("Strava Stats")
-
 df = load_activities()
 gear_map = load_gear_map()
 settings = load_settings()
@@ -2238,6 +2244,10 @@ pg = st.navigation(
 
 with st.sidebar:
     _charts_mod.set_theme(st.context.theme.type == 'dark')
+    st.markdown(
+        "<h2 style='margin:0 0 0.5rem 0;color:#FC4C02'>Strava Stats</h2>",
+        unsafe_allow_html=True,
+    )
     st.markdown("**View**")
     for _p in _view_pages:
         st.page_link(_p)
