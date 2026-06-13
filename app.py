@@ -23,6 +23,7 @@ from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
     SKI_BLUE,
+    STRAVA_ORANGE,
     SWIM_TEAL,
     SWIM_TEAL_LIGHT,
     make_bike_heatmap,
@@ -265,6 +266,24 @@ def _all_time_line(*, distance, hours, activities, seasons, best_year, highest, 
         ("Equity Miles",      equity),
         ("Avg Distance",      avg),
     ])
+
+
+def _section_toc(items, color):
+    """Render a 'Jump to' table of contents linking to header anchors lower on
+    the page. ``items`` is a list of (label, anchor_id); ``color`` is the accent.
+    Rendered large and underlined, with a ↓ cue, so it clearly reads as a set of
+    in-page jump links rather than a caption."""
+    links = " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(
+        f"<a href='#{anchor}' style='color:{color};font-weight:600;"
+        f"text-decoration:underline;text-underline-offset:3px'>{label} ↓</a>"
+        for label, anchor in items
+    )
+    st.markdown(
+        f"<div style='margin:12px 0 6px;font-size:18px'>"
+        f"<span style='font-weight:700;margin-right:8px'>Jump to:</span>{links}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _apply_theme_js(theme: str) -> None:
@@ -665,6 +684,13 @@ def render_bike_tab(bike_df, gear_map, settings):
     else:
         fmt_bike = lambda r: f"{r['distance'] / 1000:.1f} km"
 
+    # --- Table of contents for the list sections below ---
+    _section_toc(
+        [("Most Recent Rides", "most-recent-rides"),
+         ("Longest Rides",     "longest-rides")],
+        STRAVA_ORANGE,
+    )
+
     st.divider()
     _render_recent_table(filtered_df, fmt_bike, "Most Recent Rides", key_prefix="bike")
 
@@ -784,16 +810,11 @@ def render_ski_tab(ski_df, settings):
         )
 
     # --- 4b. Table of contents for the list sections below ---
-    st.markdown(
-        f"<div style='margin:6px 0 2px;font-size:13px'>"
-        f"<strong>Jump to:</strong> &nbsp;"
-        f"<a href='#most-recent-snow-activities' style='color:{SKI_BLUE};text-decoration:none'>Most Recent Snow Activities</a>"
-        f" &nbsp;·&nbsp; "
-        f"<a href='#biggest-snow-days-all-seasons' style='color:{SKI_BLUE};text-decoration:none'>Biggest Snow Days</a>"
-        f" &nbsp;·&nbsp; "
-        f"<a href='#snow-days' style='color:{SKI_BLUE};text-decoration:none'>Snow Days</a>"
-        f"</div>",
-        unsafe_allow_html=True,
+    _section_toc(
+        [("Most Recent Snow Activities", "most-recent-snow-activities"),
+         ("Biggest Snow Days",           "biggest-snow-days-all-seasons"),
+         ("Snow Days",                   "snow-days")],
+        SKI_BLUE,
     )
 
     # --- 5. Most Recent Snow Activities ---
@@ -971,14 +992,10 @@ def render_swim_tab(swim_df, settings, df=None):
     )
 
     # --- 6. Table of contents for the list sections below ---
-    st.markdown(
-        f"<div style='margin:6px 0 2px;font-size:13px'>"
-        f"<strong>Jump to:</strong> &nbsp;"
-        f"<a href='#most-recent-swims' style='color:{SWIM_TEAL};text-decoration:none'>Most Recent Swims</a>"
-        f" &nbsp;·&nbsp; "
-        f"<a href='#longest-swims' style='color:{SWIM_TEAL};text-decoration:none'>Longest Swims</a>"
-        f"</div>",
-        unsafe_allow_html=True,
+    _section_toc(
+        [("Most Recent Swims", "most-recent-swims"),
+         ("Longest Swims",     "longest-swims")],
+        SWIM_TEAL,
     )
 
     fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
