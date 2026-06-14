@@ -893,6 +893,69 @@ def aggregate_equity_by_month(df, year, settings):
     return pd.DataFrame(rows)
 
 
+def rank_months_by_distance(df, value_col, n=None):
+    """All-time per-(year, month) totals of ``value_col``, ranked descending.
+
+    Returns DataFrame[year, month, label, value, count] where ``label`` is e.g.
+    "Jul 2021" and ``count`` is the number of activities in that month. Used for
+    the 'largest month' all-time stat and the top-months table. ``value`` is in
+    the column's native units (bike distance_miles, swim distance metres, ski
+    elevation_feet); callers convert/format for display. Pass ``n`` to cap rows.
+    """
+    import calendar as cal
+    cols = ['year', 'month', 'label', 'value', 'count']
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    d = df.copy()
+    d['_y'] = d['start_date_local'].dt.year
+    d['_m'] = d['start_date_local'].dt.month
+    g = (
+        d.groupby(['_y', '_m'])
+        .agg(value=(value_col, 'sum'), count=('id', 'count'))
+        .reset_index()
+        .rename(columns={'_y': 'year', '_m': 'month'})
+    )
+    g['label'] = g.apply(lambda r: f"{cal.month_abbr[int(r['month'])]} {int(r['year'])}", axis=1)
+    g = g.sort_values('value', ascending=False).reset_index(drop=True)
+    return g if n is None else g.head(n)
+
+
+def rank_equity_months(df, settings, n=None):
+    """All-time per-(year, month) total equity miles, ranked descending.
+
+    Same shape as :func:`rank_months_by_distance` (year, month, label, value,
+    count); ``value`` is total equity miles for that month, ``count`` the number
+    of activities that month. Reuses :func:`aggregate_equity_by_month`.
+    """
+    import calendar as cal
+    cols = ['year', 'month', 'label', 'value', 'count']
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    counts = (
+        df.assign(_y=df['start_date_local'].dt.year,
+                  _m=df['start_date_local'].dt.month)
+        .groupby(['_y', '_m']).size()
+    )
+    rows = []
+    for year in sorted(df['year'].unique()):
+        md = aggregate_equity_by_month(df, year, settings)
+        for _, r in md.iterrows():
+            if r['total'] <= 0:
+                continue
+            m = int(r['month'])
+            rows.append({
+                'year': int(year), 'month': m,
+                'label': f"{cal.month_abbr[m]} {int(year)}",
+                'value': float(r['total']),
+                'count': int(counts.get((int(year), m), 0)),
+            })
+    out = pd.DataFrame(rows, columns=cols)
+    if out.empty:
+        return out
+    out = out.sort_values('value', ascending=False).reset_index(drop=True)
+    return out if n is None else out.head(n)
+
+
 def compute_period_stats(df):
     """
     Compute wrapped-style stats for any pre-filtered period.

@@ -249,12 +249,14 @@ def _stats_box(items):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def _all_time_line(*, distance, hours, activities, seasons, best_year, highest, equity, avg):
+def _all_time_line(*, distance, hours, activities, seasons, best_year,
+                   largest_month, highest, equity, avg):
     """Render the uniform all-time stats line shared by the sport tabs.
 
-    Every sport shows the same eight slots in the same order; values are
-    pre-formatted display strings so each tab can express them in its own
-    native units (bike miles, snow vertical feet, swim meters, …).
+    Every sport shows the same slots in the same order; values are pre-formatted
+    display strings so each tab can express them in its own native units (bike
+    miles, snow vertical feet, swim meters, …). The "biggest" stats run from
+    coarse to fine: best year → largest month → highest single activity.
     """
     _stats_box([
         ("All-Time Distance", distance),
@@ -262,10 +264,31 @@ def _all_time_line(*, distance, hours, activities, seasons, best_year, highest, 
         ("Activities",        activities),
         ("Seasons",           seasons),
         ("Best Year",         best_year),
+        ("Largest Month",     largest_month),
         ("Highest Distance",  highest),
         ("Equity Miles",      equity),
         ("Avg Distance",      avg),
     ])
+
+
+def _render_top_months_table(ranked, value_fmt, title="Top Ten Months by Distance", n=10):
+    """Render a ranked table of the top ``n`` months by distance (descending).
+
+    ``ranked`` is the DataFrame from process_data.rank_months_by_distance /
+    rank_equity_months; ``value_fmt`` formats the native ``value`` for display.
+    """
+    st.subheader(title)
+    if ranked is None or ranked.empty:
+        st.info("No monthly data to rank yet.")
+        return
+    top = ranked.head(n).reset_index(drop=True)
+    disp = pd.DataFrame({
+        "Rank":       range(1, len(top) + 1),
+        "Month":      top['label'],
+        "Distance":   top['value'].apply(value_fmt),
+        "Activities": top['count'].astype(int),
+    })
+    st.dataframe(disp, hide_index=True, width="stretch")
 
 
 def _section_toc(items, color):
@@ -583,6 +606,7 @@ def render_bike_tab(bike_df, gear_map, settings):
     ]
     filtered_df = bike_df[bike_df['gear_id'].isin(selected_gears)]
     yearly_all = process_data.aggregate_by_year(filtered_df)
+    bike_months_ranked = process_data.rank_months_by_distance(filtered_df, 'distance_miles')
 
     # --- All-time stats line (top) ---
     if not filtered_df.empty and not yearly_all.empty:
@@ -591,6 +615,7 @@ def render_bike_tab(bike_df, gear_map, settings):
         _tot   = yearly_all['miles'].sum()
         _best  = yearly_all.loc[yearly_all['miles'].idxmax()]
         _long  = filtered_df.loc[filtered_df['distance_miles'].idxmax()]
+        _lm    = bike_months_ranked.iloc[0]
         _ref   = settings.get('reference_sport', 'Bike')
         _brate = settings.get('conversions', {}).get('bike_miles_per_ref_unit', 1.0)
         _eq    = 0 if _ref == 'Bike' else (_tot / _brate if _brate else 0)
@@ -600,6 +625,7 @@ def render_bike_tab(bike_df, gear_map, settings):
             activities=f"{int(yearly_all['count'].sum()):,}",
             seasons=str(filtered_df['year'].nunique()),
             best_year=f"{int(_best['year'])} · {_conv(_best['miles']):,.0f} {_du}",
+            largest_month=f"{_conv(_lm['value']):,.0f} {_du} · {_lm['label']}",
             highest=f"{_conv(_long['distance_miles']):,.1f} {_du} · {_fmt_date(_long['start_date_local'])}",
             equity=f"{_eq:,.0f}",
             avg=f"{_conv(filtered_df['distance_miles'].mean()):,.1f} {_du}",
@@ -687,7 +713,8 @@ def render_bike_tab(bike_df, gear_map, settings):
     # --- Table of contents for the list sections below ---
     _section_toc(
         [("Most Recent Rides", "most-recent-rides"),
-         ("Longest Rides",     "longest-rides")],
+         ("Longest Rides",     "longest-rides"),
+         ("Top Ten Months",    "top-ten-months-by-distance")],
         STRAVA_ORANGE,
     )
 
@@ -696,6 +723,10 @@ def render_bike_tab(bike_df, gear_map, settings):
 
     st.divider()
     _render_longest_table(filtered_df, 'distance_miles', fmt_bike, "Longest Rides")
+
+    st.divider()
+    _bike_month_fmt = (lambda v: f"{v:,.0f} mi") if unit == 'Miles' else (lambda v: f"{v * 1.60934:,.0f} km")
+    _render_top_months_table(bike_months_ranked, _bike_month_fmt)
 
     st.divider()
 
@@ -729,6 +760,7 @@ def render_ski_tab(ski_df, settings):
     current_season_key = today.year if today.month >= 10 else today.year - 1
 
     seasonal_df = _agg_ski_by_season(ski_df)
+    ski_months_ranked = process_data.rank_months_by_distance(ski_df, 'elevation_feet')
 
     # --- All-time stats line (top). Snow measures "distance" in vertical feet. ---
     if not seasonal_df.empty:
@@ -736,6 +768,7 @@ def render_ski_tab(ski_df, settings):
         _all_sessions = int(seasonal_df['sessions'].sum())
         _best_season  = seasonal_df.loc[seasonal_df['vert_ft'].idxmax()]
         _big          = ski_df.loc[ski_df['elevation_feet'].idxmax()]
+        _lm           = ski_months_ranked.iloc[0]
         _all_eq       = _all_vert / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
         _avg_vert     = _all_vert / _all_sessions if _all_sessions else 0
         _all_time_line(
@@ -744,6 +777,7 @@ def render_ski_tab(ski_df, settings):
             activities=f"{_all_sessions:,}",
             seasons=str(len(seasonal_df)),
             best_year=f"{_best_season['season_label']} · {_best_season['vert_ft']:,.0f} ft",
+            largest_month=f"{_lm['value']:,.0f} ft · {_lm['label']}",
             highest=f"{_big['elevation_feet']:,.0f} ft · {_fmt_date(_big['start_date_local'])}",
             equity=f"{_all_eq:,.0f}",
             avg=f"{_avg_vert:,.0f} ft",
@@ -813,6 +847,7 @@ def render_ski_tab(ski_df, settings):
     _section_toc(
         [("Most Recent Snow Activities", "most-recent-snow-activities"),
          ("Biggest Snow Days",           "biggest-snow-days-all-seasons"),
+         ("Top Ten Months",             "top-ten-months-by-distance"),
          ("Snow Days",                   "snow-days")],
         SKI_BLUE,
     )
@@ -834,6 +869,10 @@ def render_ski_tab(ski_df, settings):
         lambda r: f"{r['elevation_feet']:,.0f} ft",
         "Biggest Snow Days (All Seasons)",
     )
+
+    # --- 6b. Top Ten Months by vertical feet ---
+    st.divider()
+    _render_top_months_table(ski_months_ranked, lambda v: f"{v:,.0f} ft")
 
     # --- 7. All Snow Days (reverse chronological) ---
     st.divider()
@@ -889,6 +928,7 @@ def render_swim_tab(swim_df, settings, df=None):
 
     # --- 1. All-time stats line (top of tab) ---
     yearly = _agg_swim_by_year(swim_df)
+    swim_months_ranked = process_data.rank_months_by_distance(swim_df, 'distance')
     # Units are chosen by the radio further down; read the current choice from
     # session_state so this top line already reflects it on rerun.
     _unit   = st.session_state.get('swim_unit', 'Meters')
@@ -899,6 +939,7 @@ def render_swim_tab(swim_df, settings, df=None):
         _all_sw   = int(yearly['swims'].sum())
         _best     = yearly.loc[yearly['meters'].idxmax()]
         _long     = swim_df.loc[swim_df['distance'].idxmax()]
+        _lm       = swim_months_ranked.iloc[0]
         _swim_per = settings.get('conversions', {}).get(
             'swim_meters_per_ref_unit',
             settings.get('conversions', {}).get('swim_meters_per_mile', 100))
@@ -910,6 +951,7 @@ def render_swim_tab(swim_df, settings, df=None):
             activities=f"{_all_sw:,}",
             seasons=str(swim_df['year'].nunique()),
             best_year=f"{int(_best['year'])} · {_best['meters'] * _mult:,.0f} {_dlabel}",
+            largest_month=f"{_lm['value'] * _mult:,.0f} {_dlabel} · {_lm['label']}",
             highest=f"{_long['distance'] * _mult:,.0f} {_dlabel} · {_fmt_date(_long['start_date_local'])}",
             equity=f"{_eq:,.0f}",
             avg=f"{_avg * _mult:,.0f} {_dlabel}",
@@ -994,7 +1036,8 @@ def render_swim_tab(swim_df, settings, df=None):
     # --- 6. Table of contents for the list sections below ---
     _section_toc(
         [("Most Recent Swims", "most-recent-swims"),
-         ("Longest Swims",     "longest-swims")],
+         ("Longest Swims",     "longest-swims"),
+         ("Top Ten Months",    "top-ten-months-by-distance")],
         SWIM_TEAL,
     )
 
@@ -1007,6 +1050,11 @@ def render_swim_tab(swim_df, settings, df=None):
     # --- 8. Longest Swims ---
     st.divider()
     _render_longest_table(swim_df, 'distance', fmt_swim, "Longest Swims")
+
+    # --- 9. Top Ten Months by distance ---
+    st.divider()
+    _swim_month_fmt = (lambda v: f"{v:,.0f} m") if unit == 'Meters' else (lambda v: f"{v * 1.09361:,.0f} yd")
+    _render_top_months_table(swim_months_ranked, _swim_month_fmt)
 
 
 
@@ -1022,6 +1070,7 @@ def render_equity_tab(df, settings):
     today = date.today()
     current_year = today.year
     yearly = process_data.aggregate_equity_by_year(df, settings)
+    eq_months_ranked = process_data.rank_equity_months(df, settings)
 
     # --- All-time stats line (top): total + each sport's contribution ---
     if not yearly.empty:
@@ -1034,6 +1083,9 @@ def render_equity_tab(df, settings):
                 if all_val > 0.5:
                     all_pct = f" ({all_val / all_total * 100:.0f}%)" if all_total else ""
                     all_items.append((label, f"{all_val:,.0f} mi{all_pct}"))
+        if not eq_months_ranked.empty:
+            _lm = eq_months_ranked.iloc[0]
+            all_items.append(("Largest Month", f"{_lm['value']:,.0f} mi · {_lm['label']}"))
         _stats_box(all_items)
 
     # --- 1. Thin, wide multi-year overview chart ---
@@ -1085,6 +1137,10 @@ def render_equity_tab(df, settings):
     st.plotly_chart(
         make_equity_monthly_chart(monthly, ref_label=ref_label, goal=monthly_goal),
     )
+
+    # --- 5. Top Ten Months by equity miles ---
+    st.divider()
+    _render_top_months_table(eq_months_ranked, lambda v: f"{v:,.0f} mi")
 
     st.divider()
 
