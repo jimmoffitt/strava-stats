@@ -1964,8 +1964,12 @@ def render_data_sync():
     if st.button("🔄 Sync Now", type="primary", width="stretch"):
         _run_sync()
 
-    years_str = ", ".join(str(y) for y in config.STRAVA_YEARS)
-    st.caption(f"Years: {years_str}  ·  set `STRAVA_YEARS` in `.local.env`")
+    years = sorted(set(config.STRAVA_YEARS))
+    if years:
+        contiguous = years == list(range(years[0], years[-1] + 1))
+        span = (f"{years[0]}–{years[-1]}" if contiguous and len(years) > 1
+                else ", ".join(str(y) for y in years))
+        st.caption(f"Checking {span}")
 
 
 # ---------------------------------------------------------------------------
