@@ -4,7 +4,7 @@ A personal Strava dashboard that goes deeper than the official app. Built becaus
 
 Eight interactive tabs cover Bike, Snow, Swim, cross-sport equity, a Wrapped-style summary, full-text activity search, data export, and goals. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
 
-![Combined annual chart](docs/screenshots/combined_annual.png)
+![Strava Stats dashboard](docs/screenshots/app-ui.png)
 
 ---
 
@@ -21,12 +21,13 @@ Each sport tab opens with a thin, full-width overview chart showing every year a
 
 **Snow** — vertical feet by season, days on snow, biggest days, and a full season log. Stats bar shows max single day, avg vert/day, and equity miles.
 
-![Snow overview](docs/screenshots/snow_annual.png)
-![Snow season detail](docs/screenshots/snow_season_chart.png)
+![Snow tab — all-time stats and vertical feet by season](docs/screenshots/snow-1-ui.png)
+![Snow tab — season detail with goal progress and monthly vert](docs/screenshots/snow-2-ui.png)
 
 **Swim** — annual meters (or yards), monthly breakdown, goal progress bar, and a swim log. Meters/Yards toggle applies throughout.
 
-![Swim annual](docs/screenshots/swim_annual.png)
+![Swim tab — all-time stats and annual distance](docs/screenshots/swim-1-ui.png)
+![Swim tab — year detail with goal pace and monthly distance](docs/screenshots/swim-2-ui.png)
 
 ### Equity miles
 
@@ -39,6 +40,8 @@ Different sports aren't directly comparable by distance, so this dashboard norma
 | Ski  | 1,000 vertical feet = 1 equity mile |
 
 The **Combined** tab stacks equity miles by sport for each year so you can see total fitness output regardless of which sports you focused on. Conversion rates are configurable in the Settings tab.
+
+![Combined tab — equity miles stacked by sport, per year](docs/screenshots/combined_annual.png)
 
 Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are manual equity declarations — they're listed separately and excluded from calculated totals to avoid double-counting.
 
