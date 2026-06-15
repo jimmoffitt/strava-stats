@@ -39,7 +39,7 @@ from src.charts import (
     make_year_dist_chart,
     make_year_time_chart,
 )
-from src.config import BIKE_TYPES, EQUITY_SPORT_TYPES, GEAR_FALLBACKS, SKI_TYPES, SWIM_TYPES
+from src.config import BIKE_TYPES, GEAR_FALLBACKS, SKI_TYPES, SWIM_TYPES
 
 # ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
@@ -1147,14 +1147,15 @@ def render_equity_tab(df, settings):
     # --- Custom Equity activities table ---
     st.subheader("Custom Equity Activities")
     st.caption(
-        "Activities with a custom equity marker (e.g. GEq gardening) whose sport has no Strava "
-        "type are listed here. They count toward the 'Custom' slice in the chart above."
+        "Manually-declared equity (e.g. GEq gardening, ShovelEq, stationary bike) that the "
+        "app counts because there's no matching real activity to convert. These feed the "
+        "'Custom' slice above. Declarations that merely restate a tracked activity are dropped."
     )
 
-    eq_df = process_data.get_eq_activities(df)
-    custom_eq = eq_df[~eq_df['final_type'].isin(EQUITY_SPORT_TYPES)]
+    eq_df = process_data.get_eq_activities(df, settings)
+    custom_eq = eq_df[eq_df['counts']] if not eq_df.empty else eq_df
     if custom_eq.empty:
-        st.info("No custom equity activities found.")
+        st.info("No counted equity declarations found.")
         return
 
     year_options = ["All years"] + [str(y) for y in sorted(custom_eq['year'].unique(), reverse=True)]
@@ -1167,7 +1168,7 @@ def render_equity_tab(df, settings):
     display = show_eq.copy()
     display['Date']     = pd.to_datetime(display['date']).apply(_fmt_date)
     display['Activity'] = display['name']
-    display['Type']     = display['final_type']
+    display['Type']     = display['eq_prefix']
     display['Miles']    = display['miles'].apply(lambda v: f"{v:,.1f}")
     st.dataframe(
         display[['Date', 'Activity', 'Type', 'Miles']],
@@ -2333,13 +2334,13 @@ if df.empty:
     st.error("No activity data found. Run the pipeline first.")
     st.stop()
 
-# Eq-named activities are equity declarations — exclude them from sport tabs
-# so their declared distances don't corrupt actual swim/ski metrics.
-# Bike is kept whole because SBEq entries are real indoor rides.
+# Eq-named activities are manual equity declarations (no GPS, distance = declared
+# equity miles) — exclude them from every sport tab so they don't corrupt real
+# metrics. Their equity is handled in the Combined tab via reconcile_equity_declarations.
 _eq_mask = df['name'].str.match(process_data._EQ_PATTERN, na=False)
-bike_df  = df[df['final_type'].isin(BIKE_TYPES)].copy()
-ski_df   = df[df['final_type'].isin(SKI_TYPES)  & ~_eq_mask].copy()
-swim_df  = df[df['final_type'].isin(SWIM_TYPES) & ~_eq_mask].copy()
+bike_df  = df[df['final_type'].isin(BIKE_TYPES)  & ~_eq_mask].copy()
+ski_df   = df[df['final_type'].isin(SKI_TYPES)   & ~_eq_mask].copy()
+swim_df  = df[df['final_type'].isin(SWIM_TYPES)  & ~_eq_mask].copy()
 
 # On first render of each browser session, sync localStorage to the saved theme
 # preference.  Subsequent renders skip this (initial_theme_synced is set) so

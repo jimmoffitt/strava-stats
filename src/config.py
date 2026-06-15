@@ -107,6 +107,27 @@ DEFAULT_SETTINGS = {
         'snow_path': None,   # None = use bundled SNOW_DEFAULT_IMAGE
         'swim_path': None,   # None = use bundled SWIM_DEFAULT_IMAGE
     },
+    # Manual equity declarations: activities named with the equity convention
+    # (e.g. "GEq 10" = 10 declared equity miles) for effort you want counted by
+    # hand. See process_data.reconcile_equity_declarations.
+    'equity_declarations': {
+        'enabled': True,
+        # 'orphan' = count a declaration only when no REAL activity of its mapped
+        # sport is nearby (avoids double-counting effort the app already
+        # converts); 'all' = count every declaration; 'none' = ignore them.
+        'policy': 'orphan',
+        'match_window_days': 0,          # 0 = same calendar day
+        # Declaration name-prefix -> the real Strava activity type(s) it restates.
+        # A prefix NOT listed here (e.g. gardening 'G', shoveling 'SHOVEL',
+        # stationary bike 'SB') has no real equivalent, so it always counts.
+        'prefix_map': {
+            'H':  ['Hike'],
+            'W':  ['Walk'],
+            'PB': ['StandUpPaddling'],
+            'SW': ['Swim'],
+            'S':  ['Swim', 'AlpineSki', 'Snowboard'],
+        },
+    },
 }
 
 def validate_config():

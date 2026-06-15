@@ -51,29 +51,13 @@ def process_activities(activities_list):
     return df
 
 def _determine_activity_type(row):
+    """Final activity type — just the Strava type.
+
+    Equity-marker activities (SBEq, HEq, GEq, SEq, …) used to be reclassified
+    into real sports here; that is now handled generically by
+    reconcile_equity_declarations, so the type is taken straight from Strava.
     """
-    Internal helper to handle SBEq, HEq, GEq, SEq logic.
-    """
-    name = str(row.get('name', '')).upper()
-    strava_type = row.get('type', 'Unknown')
-
-    if 'SBEQ' in name: return 'Ride'
-    if 'HEQ' in name: return 'Hiking'
-    if 'GEQ' in name: return 'Gardening'
-
-    # Use word-boundary match so "[Sequ]" (→ "[SEQU]") does not trigger this branch.
-    # Plain 'SEQ' in name would substring-match "[SEQU]" and misclassify it.
-    if re.search(r'\bSEQ\b', name):
-        # SEq has been used for both swimming and skiing activities.
-        # Date rule: May 7 – Oct 31 → Swim; Nov 1 – May 6 → AlpineSki.
-        dt = row.get('start_date_local')
-        if dt is not None:
-            ts = pd.Timestamp(dt)
-            if (ts.month, ts.day) >= (5, 7) and (ts.month, ts.day) < (11, 1):
-                return 'Swim'
-            return 'AlpineSki'
-
-    return strava_type
+    return row.get('type', 'Unknown')
 
 def aggregate_by_year(bike_df):
     """
@@ -815,6 +799,68 @@ def bike_monthly_goal_series(settings):
     return out
 
 
+def _eq_prefix(name):
+    """Uppercase name-prefix of an equity declaration: 'GEq 10'->'G', 'Eq 8'->''."""
+    m = re.match(r'^([A-Za-z\[]*)[Ee][Qq]', str(name))
+    return m.group(1).upper() if m else ''
+
+
+def reconcile_equity_declarations(df, settings=None):
+    """Mark manual equity-declaration activities and decide which count as
+    'custom' equity, per the configured de-duplication policy.
+
+    A *declaration* is any activity whose name matches the equity convention
+    (_EQ_PATTERN, e.g. 'GEq 10'); its declared equity miles are its
+    distance_miles. Policy comes from settings['equity_declarations']:
+      - 'orphan' (default): a declaration counts only when it doesn't restate a
+        real activity the app already converts — i.e. its name-prefix is absent
+        from prefix_map (gardening, shoveling, stationary bike, …), OR no real
+        activity of the mapped sport(s) falls within match_window_days.
+      - 'all':  every declaration counts.
+      - 'none': none count.
+
+    Adds two boolean columns and returns the (copied) df:
+      is_eq_declaration — name matches the convention (never a 'real' activity)
+      eq_counts         — contributes custom equity under the policy
+    """
+    df = df.copy()
+    df['is_eq_declaration'] = df['name'].str.match(_EQ_PATTERN, na=False)
+
+    cfg     = (settings or {}).get('equity_declarations', {})
+    enabled = cfg.get('enabled', True)
+    policy  = cfg.get('policy', 'orphan')
+    window  = int(cfg.get('match_window_days', 0))
+    pmap    = {k.upper(): set(v) for k, v in cfg.get('prefix_map', {}).items()}
+
+    decl = df['is_eq_declaration']
+    if not enabled or policy == 'none':
+        df['eq_counts'] = False
+        return df
+    if policy == 'all':
+        df['eq_counts'] = decl
+        return df
+
+    # policy == 'orphan' — map each real activity day to the set of types done.
+    real = df.loc[~decl]
+    real_by_date = {}
+    for d, t in zip(real['start_date_local'].dt.date, real['final_type']):
+        real_by_date.setdefault(d, set()).add(t)
+
+    def _counts(row):
+        types = pmap.get(_eq_prefix(row['name']))
+        if not types:
+            return True   # no mapped sport → always an orphan (e.g. gardening)
+        d0 = row['start_date_local'].date()
+        for off in range(-window, window + 1):
+            if real_by_date.get(d0 + timedelta(days=off), set()) & types:
+                return False   # a real activity of the mapped sport is nearby
+        return True
+
+    df['eq_counts'] = False
+    df.loc[decl, 'eq_counts'] = df.loc[decl].apply(_counts, axis=1)
+    return df
+
+
 def aggregate_equity_by_year(df, settings):
     """
     Equity miles per year, broken down by sport.
@@ -827,16 +873,15 @@ def aggregate_equity_by_year(df, settings):
     auto-calculated from real activities.
     """
     from src.config import (BIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES,
-                            HIKE_TYPES, PADDLE_TYPES, EQUITY_SPORT_TYPES)
+                            HIKE_TYPES, PADDLE_TYPES)
     rates = _equity_rates(settings)
 
-    df = df.copy()
-    df['_is_eq'] = df['name'].str.match(_EQ_PATTERN, na=False)
+    df = reconcile_equity_declarations(df, settings)
 
     rows = []
     for year in sorted(df['year'].unique()):
         y    = df[df['year'] == year]
-        real = ~y['_is_eq']
+        real = ~y['is_eq_declaration']
 
         bike   = y[y['final_type'].isin(BIKE_TYPES)   & real]['distance_miles'].sum()   / rates['bike']
         run    = y[y['final_type'].isin(RUN_TYPES)    & real]['distance_miles'].sum()   / rates['run']
@@ -845,8 +890,8 @@ def aggregate_equity_by_year(df, settings):
         hike   = y[y['final_type'].isin(HIKE_TYPES)   & real]['distance_miles'].sum()   / rates['hike']
         paddle = y[y['final_type'].isin(PADDLE_TYPES) & real]['distance_miles'].sum()   / rates['paddle']
 
-        # Custom equity: Eq-named activities with no native sport type
-        custom = y[y['_is_eq'] & ~y['final_type'].isin(EQUITY_SPORT_TYPES)]['distance_miles'].sum()
+        # Custom equity: manual declarations that count under the de-dup policy
+        custom = y[y['eq_counts']]['distance_miles'].sum()
 
         total = bike + run + ski + swim + hike + paddle + custom
         rows.append({'year': year, 'bike': bike, 'run': run, 'ski': ski,
@@ -862,17 +907,17 @@ def aggregate_equity_by_month(df, year, settings):
     """
     import calendar as cal
     from src.config import (BIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES,
-                            HIKE_TYPES, PADDLE_TYPES, EQUITY_SPORT_TYPES)
+                            HIKE_TYPES, PADDLE_TYPES)
     rates = _equity_rates(settings)
 
+    df = reconcile_equity_declarations(df, settings)
     y_df = df[df['year'] == year].copy()
-    y_df['_is_eq'] = y_df['name'].str.match(_EQ_PATTERN, na=False)
     y_df['month']  = y_df['start_date_local'].dt.month
 
     rows = []
     for m in range(1, 13):
         mo   = y_df[y_df['month'] == m]
-        real = ~mo['_is_eq']
+        real = ~mo['is_eq_declaration']
 
         bike   = mo[mo['final_type'].isin(BIKE_TYPES)   & real]['distance_miles'].sum()  / rates['bike']
         run    = mo[mo['final_type'].isin(RUN_TYPES)    & real]['distance_miles'].sum()  / rates['run']
@@ -880,7 +925,7 @@ def aggregate_equity_by_month(df, year, settings):
         swim   = mo[mo['final_type'].isin(SWIM_TYPES)   & real]['distance'].sum()        / rates['swim']
         hike   = mo[mo['final_type'].isin(HIKE_TYPES)   & real]['distance_miles'].sum()  / rates['hike']
         paddle = mo[mo['final_type'].isin(PADDLE_TYPES) & real]['distance_miles'].sum()  / rates['paddle']
-        custom = mo[mo['_is_eq'] & ~mo['final_type'].isin(EQUITY_SPORT_TYPES)]['distance_miles'].sum()
+        custom = mo[mo['eq_counts']]['distance_miles'].sum()
 
         total = bike + run + ski + swim + hike + paddle + custom
         rows.append({
@@ -1219,26 +1264,25 @@ def aggregate_recent_months_by_sport(df, sport, n_months):
     return result
 
 
-def get_eq_activities(df):
+def get_eq_activities(df, settings=None):
     """
-    Returns all activities whose names match the *Eq pattern, sorted by date descending.
-    Columns: date, name, final_type, eq_prefix, miles, year, month.
+    Returns all equity-declaration activities, sorted by date descending.
+    Columns: date, name, final_type, eq_prefix, miles, year, month, counts —
+    where ``counts`` marks the declarations that contribute custom equity under
+    the configured de-dup policy (see reconcile_equity_declarations).
     """
-    import re
-    eq_df = df[df['name'].str.match(_EQ_PATTERN, na=False)].copy()
+    rec = reconcile_equity_declarations(df, settings)
+    eq_df = rec[rec['is_eq_declaration']].copy()
     if eq_df.empty:
         return eq_df
 
-    def _prefix(name):
-        m = re.match(r'^([A-Za-z\[]*)[Ee][Qq]', str(name))
-        return m.group(1).upper() if m else ''
-
-    eq_df['eq_prefix'] = eq_df['name'].apply(_prefix)
+    eq_df['eq_prefix'] = eq_df['name'].apply(_eq_prefix)
     eq_df['date']  = eq_df['start_date_local'].dt.date
     eq_df['month'] = eq_df['start_date_local'].dt.month
     return (
-        eq_df[['date', 'name', 'final_type', 'eq_prefix', 'distance_miles', 'year', 'month']]
-        .rename(columns={'distance_miles': 'miles'})
+        eq_df[['date', 'name', 'final_type', 'eq_prefix', 'distance_miles',
+               'year', 'month', 'eq_counts']]
+        .rename(columns={'distance_miles': 'miles', 'eq_counts': 'counts'})
         .sort_values('date', ascending=False)
         .reset_index(drop=True)
     )
