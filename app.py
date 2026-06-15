@@ -309,6 +309,27 @@ def _section_toc(items, color):
     )
 
 
+def _archetype_banner(arch):
+    """Render the Wrapped athlete-archetype card from compute_athlete_archetype."""
+    dark = st.context.theme.type == 'dark'
+    bg  = '#2a2118' if dark else '#FFF1EA'
+    sub = '#c9b8a8' if dark else '#8a6d5a'
+    also = ""
+    if arch.get('also'):
+        also = (f"<div style='font-size:12px;color:{sub};margin-top:6px'>"
+                f"Also: {' · '.join(arch['also'])}</div>")
+    st.markdown(
+        f"<div style='background:{bg};border-left:5px solid {STRAVA_ORANGE};"
+        f"border-radius:8px;padding:16px 20px;margin:8px 0'>"
+        f"<span style='font-size:34px;vertical-align:middle'>{arch['emoji']}</span>"
+        f"<span style='font-size:26px;font-weight:800;margin-left:10px;vertical-align:middle'>{arch['name']}</span>"
+        f"<div style='font-size:15px;margin-top:6px'>{arch['tagline']}</div>"
+        f"<div style='font-size:13px;color:{sub};margin-top:2px'>{arch['reason']}</div>"
+        f"{also}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _apply_theme_js(theme: str) -> None:
     """Push a theme preference ('dark' or 'light') into Streamlit's localStorage
     and reload the parent page so Streamlit picks it up natively.  Only triggers
@@ -1243,6 +1264,29 @@ def _filter_by_period(df, meta):
     return df.copy()  # 'all'
 
 
+def _prior_period_filter(df, meta):
+    """Return the df slice for the period immediately before ``meta`` (for
+    period-over-period deltas), or None when there's no sensible prior
+    ('All time'). Year → prior year, month → same month last year, rolling N
+    days → the N days before that."""
+    today = date.today()
+    ptype = meta['type']
+    sd = df['start_date_local'].dt.date
+    if ptype == 'rolling':
+        n = meta['days']
+        start = today - timedelta(days=2 * n)
+        end   = today - timedelta(days=n)
+        return df[(sd >= start) & (sd < end)].copy()
+    elif ptype == 'year':
+        return df[df['year'] == meta['year'] - 1].copy()
+    elif ptype == 'month':
+        return df[
+            (df['year'] == meta['year'] - 1) &
+            (df['start_date_local'].dt.month == meta['month'])
+        ].copy()
+    return None  # 'all'
+
+
 _SPORT_OPTIONS = [
     "All activities",
     "Biking",
@@ -1362,23 +1406,38 @@ def render_wrapped_tab(df, settings, athlete_profile):
         st.info("No activities found for the selected period and filter.")
         return
 
-    # --- Header ---
-    if athlete_profile.get('firstname'):
-        name = athlete_profile['firstname']
-        st.markdown(f"### {name} — {selected_period} · {selected_sport}")
-    else:
-        st.markdown(f"### {selected_period} · {selected_sport}")
-
-    # --- Compute stats ---
+    # --- Compute stats + prior-period comparison ---
     stats = process_data.compute_period_stats(filtered)
     curr = stats['totals']
 
-    # --- Summary metrics ---
+    prior = _prior_period_filter(df, period_meta[selected_period])
+    if prior is not None:
+        prior = _filter_by_sport(prior, selected_sport)
+    prior_totals = (process_data.compute_period_stats(prior).get('totals')
+                    if (prior is not None and not prior.empty) else None)
+
+    # --- Header + athlete archetype ---
+    who = (athlete_profile['firstname'] + " — ") if athlete_profile.get('firstname') else ""
+    st.markdown(f"### {who}{selected_period} · {selected_sport}")
+
+    arch = process_data.compute_athlete_archetype(filtered)
+    if arch:
+        _archetype_banner(arch)
+
+    # --- Summary metrics (with prior-period deltas) ---
+    def _delta(key):
+        if not prior_totals:
+            return None
+        d = curr[key] - prior_totals[key]
+        return f"{d:+,.0f}" if abs(d) >= 0.5 else None
+
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Activities",     f"{curr['activities']:,}")
-    m2.metric("Miles",          f"{curr['miles']:,.0f}")
-    m3.metric("Hours",          f"{curr['hours']:,.0f}")
-    m4.metric("Elevation (ft)", f"{curr['vert_ft']:,.0f}")
+    m1.metric("Activities",     f"{curr['activities']:,}",   _delta('activities'))
+    m2.metric("Miles",          f"{curr['miles']:,.0f}",     _delta('miles'))
+    m3.metric("Hours",          f"{curr['hours']:,.0f}",     _delta('hours'))
+    m4.metric("Elevation (ft)", f"{curr['vert_ft']:,.0f}",   _delta('vert_ft'))
+    if prior_totals:
+        st.caption("▲▼ vs the previous comparable period")
 
     if athlete_profile.get('follower_count'):
         f1, f2, _ = st.columns([1, 1, 2])
@@ -1409,21 +1468,15 @@ def render_wrapped_tab(df, settings, athlete_profile):
 
     st.divider()
 
-    # --- Highlights ---
-    st.subheader("Highlights")
-    h1, h2, h3, h4 = st.columns(4)
-
-    bw = stats['biggest_week']
-    h1.metric("Biggest Week", f"{bw['miles']:,.0f} mi", bw['label'])
-
-    la = stats['longest_activity']
-    la_name = la['name'] if len(la['name']) <= 28 else la['name'][:25] + "..."
-    h2.metric("Longest Activity", f"{la['miles']:,.1f} mi", la_name)
-
-    bvd = stats['best_vert_day']
-    h3.metric("Most Vert in a Day", f"{bvd['vert_ft']:,.0f} ft", str(bvd['date']))
-
-    h4.metric("Longest Active Streak", f"{stats['longest_streak']} days")
+    # --- Records ---
+    st.subheader("Records")
+    alltime_sport = _filter_by_sport(df, selected_sport)
+    records = process_data.compute_records(filtered, alltime_sport)
+    rec_cols = st.columns(3)
+    for i, rec in enumerate(records):
+        label = f"🏆 {rec['label']}" if rec['is_pr'] else rec['label']
+        rec_cols[i % 3].metric(label, rec['value'])
+    st.caption("🏆 = all-time best for the current activity filter")
 
     st.divider()
 

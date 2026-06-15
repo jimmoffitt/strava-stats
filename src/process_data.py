@@ -1076,6 +1076,126 @@ def compute_period_stats(df):
     }
 
 
+def _max_active_streak(dates):
+    """Longest run of consecutive calendar days present in ``dates``."""
+    dates = sorted(set(dates))
+    if not dates:
+        return 0
+    mx = cur = 1
+    for i in range(1, len(dates)):
+        if (dates[i] - dates[i - 1]).days == 1:
+            cur += 1
+            mx = max(mx, cur)
+        else:
+            cur = 1
+    return mx
+
+
+def compute_athlete_archetype(df):
+    """Classify a (pre-filtered) activity slice into one 'Wrapped'-style
+    athlete archetype, plus up to two secondary traits.
+
+    Heuristic: each candidate archetype gets a 0–1 score from the data and the
+    highest wins. Returns {emoji, name, tagline, reason, also: [str]} or {} when
+    empty. Scores are deliberately transparent so the 'reason' line can cite the
+    stat that earned the label.
+    """
+    if df is None or df.empty:
+        return {}
+    from src.config import SKI_TYPES
+    d = df.copy()
+    n = len(d)
+    hour = d['start_date_local'].dt.hour
+    dow  = d['start_date_local'].dt.dayofweek          # 0=Mon … 6=Sun
+    days = sorted(d['start_date_local'].dt.date.unique())
+
+    # Snow sports log DOWNHILL vertical, not climbing — keep them apart so a big
+    # ski season doesn't masquerade as uphill climbing.
+    ski_mask   = d['final_type'].isin(SKI_TYPES)
+    climb_vert = d.loc[~ski_mask, 'elevation_feet'].sum()         # uphill gain only
+    climb_mi   = d.loc[~ski_mask, 'distance_miles'].sum()
+    vpm        = (climb_vert / climb_mi) if climb_mi > 0 else 0   # uphill ft per mile
+    ski_vert   = d.loc[ski_mask, 'elevation_feet'].sum()          # downhill ft on snow
+
+    sports  = d['final_type'].nunique()
+    morning = float((hour < 9).mean())
+    evening = float((hour >= 18).mean())
+    weekend = float((dow >= 5).mean())
+    streak  = _max_active_streak(days)
+    span    = max((days[-1] - days[0]).days, 1) if days else 1
+    per_wk  = n / (span / 7) if span else n
+    avg_mi  = d['distance_miles'].mean()
+
+    clip = lambda x: max(0.0, min(1.0, x))
+    # (emoji, name, tagline, score, reason)
+    cands = [
+        ('⛷️', 'The Descender',      'Gravity does your climbing for you.',
+         clip(ski_vert / 200000),    f"{ski_vert:,.0f} ft of downhill on snow"),
+        ('⛰️', 'The Climber',        'You earn every foot the hard way.',
+         clip(vpm / 100),            f"{climb_vert:,.0f} ft climbed uphill — {vpm:,.0f} ft per mile"),
+        ('🔥', 'The Streaker',       'Consistency is the whole game.',
+         clip(streak / 14),          f"Longest streak: {streak} days in a row"),
+        ('🌅', 'Dawn Patrol',        'First one out the door.',
+         clip((morning - 0.3) / 0.7), f"{morning:.0%} of activities started before 9am"),
+        ('🌙', 'The Night Owl',      'You move after dark.',
+         clip((evening - 0.25) / 0.75), f"{evening:.0%} of activities started after 6pm"),
+        ('🗓️', 'Weekend Warrior',    'Saturdays and Sundays are sacred.',
+         clip((weekend - 0.45) / 0.55), f"{weekend:.0%} of activities on weekends"),
+        ('🧭', 'The Explorer',       'A little bit of everything.',
+         clip((sports - 1) / 3),     f"{sports} different sports"),
+        ('🛣️', 'The Distance Hound', 'Long and steady wins.',
+         clip(avg_mi / 25),          f"{avg_mi:,.1f} mi average outing"),
+        ('💪', 'The Workhorse',      'You just keep showing up.',
+         clip(per_wk / 5),           f"{per_wk:,.1f} activities per week"),
+    ]
+    cands.sort(key=lambda c: c[3], reverse=True)
+    top  = cands[0]
+    also = [f"{c[1]} ({c[4]})" for c in cands[1:3] if c[3] > 0.4]
+    return {'emoji': top[0], 'name': top[1], 'tagline': top[2],
+            'reason': top[4], 'also': also}
+
+
+def compute_records(period_df, alltime_df=None):
+    """Peak efforts for ``period_df``, each flagged ``is_pr`` when it matches or
+    beats the all-time best in ``alltime_df`` (same activity filter).
+
+    Returns a list of {label, value (display str), is_pr}. Distance-based, so
+    most meaningful for the default 'All activities' Wrapped view.
+    """
+    if period_df is None or period_df.empty:
+        return []
+
+    def _peaks(d):
+        d = d.copy()
+        by_day = d.groupby(d['start_date_local'].dt.date)
+        iso = d['start_date_local'].dt.isocalendar()
+        wk = (d.assign(_y=iso['year'].values, _w=iso['week'].values)
+                .groupby(['_y', '_w'])['distance_miles'].sum())
+        mo = d.groupby([d['start_date_local'].dt.year,
+                        d['start_date_local'].dt.month])['distance_miles'].sum()
+        return {
+            'longest':  d['distance_miles'].max(),
+            'dist_day': by_day['distance_miles'].sum().max(),
+            'vert_day': by_day['elevation_feet'].sum().max(),
+            'week':     wk.max() if not wk.empty else 0,
+            'month':    mo.max() if not mo.empty else 0,
+            'streak':   _max_active_streak(d['start_date_local'].dt.date.tolist()),
+        }
+
+    p = _peaks(period_df)
+    a = _peaks(alltime_df) if (alltime_df is not None and not alltime_df.empty) else p
+    eps = 1e-6
+    specs = [
+        ('Longest activity',       f"{p['longest']:,.1f} mi",  p['longest']  >= a['longest']  - eps),
+        ('Most distance in a day', f"{p['dist_day']:,.1f} mi", p['dist_day'] >= a['dist_day'] - eps),
+        ('Biggest week',           f"{p['week']:,.0f} mi",     p['week']     >= a['week']     - eps),
+        ('Biggest month',          f"{p['month']:,.0f} mi",    p['month']    >= a['month']    - eps),
+        ('Most vert in a day',     f"{p['vert_day']:,.0f} ft", p['vert_day'] >= a['vert_day'] - eps),
+        ('Longest active streak',  f"{p['streak']} days",      p['streak']   >= a['streak']   - eps),
+    ]
+    return [{'label': l, 'value': v, 'is_pr': pr} for (l, v, pr) in specs]
+
+
 def get_longest_activities(df, sort_col='distance_miles', n=20):
     """Returns the top n activities sorted by sort_col descending."""
     if df.empty:
