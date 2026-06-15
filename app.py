@@ -309,27 +309,6 @@ def _section_toc(items, color):
     )
 
 
-def _archetype_banner(arch):
-    """Render the Wrapped athlete-archetype card from compute_athlete_archetype."""
-    dark = st.context.theme.type == 'dark'
-    bg  = '#2a2118' if dark else '#FFF1EA'
-    sub = '#c9b8a8' if dark else '#8a6d5a'
-    also = ""
-    if arch.get('also'):
-        also = (f"<div style='font-size:12px;color:{sub};margin-top:6px'>"
-                f"Also: {' · '.join(arch['also'])}</div>")
-    st.markdown(
-        f"<div style='background:{bg};border-left:5px solid {STRAVA_ORANGE};"
-        f"border-radius:8px;padding:16px 20px;margin:8px 0'>"
-        f"<span style='font-size:34px;vertical-align:middle'>{arch['emoji']}</span>"
-        f"<span style='font-size:26px;font-weight:800;margin-left:10px;vertical-align:middle'>{arch['name']}</span>"
-        f"<div style='font-size:15px;margin-top:6px'>{arch['tagline']}</div>"
-        f"<div style='font-size:13px;color:{sub};margin-top:2px'>{arch['reason']}</div>"
-        f"{also}</div>",
-        unsafe_allow_html=True,
-    )
-
-
 def _apply_theme_js(theme: str) -> None:
     """Push a theme preference ('dark' or 'light') into Streamlit's localStorage
     and reload the parent page so Streamlit picks it up natively.  Only triggers
@@ -1416,13 +1395,9 @@ def render_wrapped_tab(df, settings, athlete_profile):
     prior_totals = (process_data.compute_period_stats(prior).get('totals')
                     if (prior is not None and not prior.empty) else None)
 
-    # --- Header + athlete archetype ---
+    # --- Header ---
     who = (athlete_profile['firstname'] + " — ") if athlete_profile.get('firstname') else ""
     st.markdown(f"### {who}{selected_period} · {selected_sport}")
-
-    arch = process_data.compute_athlete_archetype(filtered)
-    if arch:
-        _archetype_banner(arch)
 
     # --- Summary metrics (with prior-period deltas) ---
     def _delta(key):
