@@ -1361,7 +1361,11 @@ def _render_longest_table(df, sort_col, fmt_dist, title="Longest Activities", n=
     if df.empty:
         st.info("No activities to display.")
         return
-    top = df.nlargest(n, sort_col).copy()
+    # Rank by distance descending; break ties by most-recent-first so equal
+    # distances read in descending chronological order.
+    top = df.sort_values(
+        [sort_col, 'start_date_local'], ascending=[False, False],
+    ).head(n).copy()
     top['date_str']     = pd.to_datetime(top['start_date_local']).apply(_fmt_date)
     top['dist_display'] = top.apply(fmt_dist, axis=1)
     top['duration_str'] = top['moving_time'].apply(_fmt_time)
@@ -1737,7 +1741,9 @@ def render_export_tab(df, settings):
     )
 
     longest_df = (
-        filtered.nlargest(20, 'distance_miles')
+        filtered.sort_values(
+            ['distance_miles', 'start_date_local'], ascending=[False, False],
+        ).head(20)
         [['start_date_local', 'name', 'final_type', 'distance_miles', 'moving_time']]
         .rename(columns={'start_date_local': 'Date', 'name': 'Activity', 'final_type': 'Type',
                          'distance_miles': 'Miles', 'moving_time': 'Moving Time (s)'})

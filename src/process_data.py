@@ -961,7 +961,10 @@ def rank_months_by_distance(df, value_col, n=None):
         .rename(columns={'_y': 'year', '_m': 'month'})
     )
     g['label'] = g.apply(lambda r: f"{cal.month_abbr[int(r['month'])]} {int(r['year'])}", axis=1)
-    g = g.sort_values('value', ascending=False).reset_index(drop=True)
+    # Rank by value descending; break ties by most-recent month first.
+    g = g.sort_values(
+        ['value', 'year', 'month'], ascending=[False, False, False],
+    ).reset_index(drop=True)
     return g if n is None else g.head(n)
 
 
@@ -997,7 +1000,10 @@ def rank_equity_months(df, settings, n=None):
     out = pd.DataFrame(rows, columns=cols)
     if out.empty:
         return out
-    out = out.sort_values('value', ascending=False).reset_index(drop=True)
+    # Rank by value descending; break ties by most-recent month first.
+    out = out.sort_values(
+        ['value', 'year', 'month'], ascending=[False, False, False],
+    ).reset_index(drop=True)
     return out if n is None else out.head(n)
 
 
@@ -1178,10 +1184,13 @@ def compute_records(period_df, alltime_df=None):
 
 
 def get_longest_activities(df, sort_col='distance_miles', n=20):
-    """Returns the top n activities sorted by sort_col descending."""
+    """Returns the top n activities sorted by sort_col descending, breaking
+    ties by most-recent-first (descending chronological order)."""
     if df.empty:
         return pd.DataFrame()
-    return df.nlargest(n, sort_col).reset_index(drop=True)
+    return df.sort_values(
+        [sort_col, 'start_date_local'], ascending=[False, False],
+    ).head(n).reset_index(drop=True)
 
 
 def aggregate_recent_months_by_sport(df, sport, n_months):
