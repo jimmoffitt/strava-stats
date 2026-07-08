@@ -2,7 +2,9 @@
 
 A personal Strava dashboard that goes deeper than the official app. Built because the annual "Wrapped" summary doesn't answer the questions I actually care about: How does this year compare to last? Am I riding more or less than 2021? How do ski and swim effort stack up against bike miles?
 
-Eight interactive tabs cover Bike, Snow, Swim, cross-sport equity, a Wrapped-style summary, full-text activity search, data export, and goals. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
+A sidebar-driven Streamlit app: **View** pages for Bike, Snow, Swim, Combined (cross-sport equity), and a Wrapped-style summary; **Tools** for full-text activity search and data export; and a **Settings** area split into five focused sub-pages. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
+
+**🚀 Live demo: [strava-stats-1.streamlit.app](https://strava-stats-1.streamlit.app/)** — a read-only build with a sanitized copy of the real dataset (see [How the demo works](#how-the-demo-works)). Works nicely on a phone too: open it in Safari and use Share → *Add to Home Screen*.
 
 ![Strava Stats dashboard](docs/screenshots/app-ui.png)
 
@@ -12,7 +14,9 @@ Eight interactive tabs cover Bike, Snow, Swim, cross-sport equity, a Wrapped-sty
 
 ### Multi-sport dashboard
 
-Each sport tab opens with a thin, full-width overview chart showing every year at a glance, then drops into per-year or per-season detail with a compact stats bar.
+The sidebar reads top-to-bottom: **View** (the five sport/summary pages), **Data Sync** (archive count, last-sync age, and the Sync Now button), **Settings**, and **Tools**.
+
+Every sport view opens the same way: an all-time stats line (distance, hours, activities, seasons, best year, largest month, longest single activity, equity miles, and per-activity averages for distance, time, and speed), then a thin full-width overview chart showing every year at a glance, followed by a distance-by-month chart for the selected year, the period/unit controls, and a compact stats bar for the selected period. Ranked tables (longest rides/swims, biggest snow days) break distance ties by most-recent-first.
 
 **Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
 
@@ -26,8 +30,8 @@ Each sport tab opens with a thin, full-width overview chart showing every year a
 
 **Swim** — annual meters (or yards), monthly breakdown, goal progress bar, and a swim log. Meters/Yards toggle applies throughout.
 
-![Swim tab — all-time stats and annual distance](docs/screenshots/swim-1-ui.png)
-![Swim tab — year detail with goal pace and monthly distance](docs/screenshots/swim-2-ui.png)
+![Swim tab — all-time stats, annual and monthly distance](docs/screenshots/swim-1-ui.png)
+![Swim tab — goal pace, year stats, and swim log](docs/screenshots/swim-2-ui.png)
 
 ### Equity miles
 
@@ -59,7 +63,7 @@ Past years are fetched once and archived. Only the current year is re-checked on
 
 **Export** — annual summaries, monthly breakdowns, and a full activity table, each with PNG download and a combined ZIP.
 
-**Settings** — set equity mile conversion rates and annual/monthly/seasonal goals. Changes are written to `data/settings.json` immediately.
+**Settings** — five focused sub-pages: **Sport equity** (conversion rates and the reference sport), **Goals** (annual/monthly/seasonal targets), **Seasons** (ski and swim season boundaries), **Map** (heatmap home location), and **Appearance** (theme, tab images). Each sub-page saves independently, merging its slice into `data/settings.json`.
 
 ---
 
@@ -90,6 +94,20 @@ After the first run, use the **Sync Now** button in the sidebar for incremental 
 
 ---
 
+## How the demo works
+
+The [live demo](https://strava-stats-1.streamlit.app/) is the same app in a read-only **demo mode**, deployed on [Streamlit Community Cloud](https://share.streamlit.io) with no credentials on the host.
+
+**Sanitized dataset.** The real activity archive is gitignored (it contains GPS traces, heart rate, and location data). `make_demo_data.py` derives a committable copy at `data/demo/activities.json` by whitelisting only the ~14 fields the app actually reads — id, name, type, dates, distance, times, elevation, gear id, and a couple of counts. GPS coordinates, map polylines, heart rate, power, device names, and location strings are all dropped. A copy of the gear map rides along so bike names render.
+
+**Automatic demo mode.** `DEMO_MODE` in `src/config.py` turns on when `STRAVA_STATS_DEMO=1` is set, or automatically when the real archive is absent but the demo dataset is present — which is exactly the state of a fresh clone, since `data/` is gitignored. In demo mode every data path is redirected to `data/demo/`, the Sync Now button is replaced with a read-only notice, and runtime writes (settings, sync records) land in `data/demo/` where they're gitignored. Locally, with the real archive present, nothing changes.
+
+**Deployment.** Point [share.streamlit.io](https://share.streamlit.io) at `app.py` on `main` — that's the whole setup. A fresh clone has no real archive, so demo mode enables itself; no secrets or environment configuration are needed. The app redeploys automatically on every push. Two host-friendly details: `requirements.txt` lists direct dependencies with loose version ranges (so the host's Python always gets prebuilt wheels), and the Export tab probes for PNG-rendering capability at runtime, degrading to CSV-only downloads where kaleido has no Chrome to drive.
+
+**Refreshing the demo data.** After a sync, rerun `python make_demo_data.py`, review the printed field/name summary, and commit the updated `data/demo/activities.json`.
+
+---
+
 ## How it's built
 
 ### Stack
@@ -107,18 +125,21 @@ After the first run, use the **Sync Now** button in the sidebar for incremental 
 
 ```
 strava-stats/
-├── app.py                   # Streamlit dashboard — all tab render functions
+├── app.py                   # Streamlit dashboard — all page render functions
 ├── run_pipeline.py          # CLI: fetch → process → publish (static PNGs)
+├── make_demo_data.py        # Builds the sanitized data/demo/ dataset for the demo
+├── gen_screenshots.py       # Regenerates the chart PNGs embedded in this README
 │
 ├── src/
-│   ├── config.py            # Env vars, file paths, sport type constants, defaults
+│   ├── config.py            # Env vars, file paths, sport type constants, DEMO_MODE
 │   ├── fetch_data.py        # Strava OAuth, token refresh, incremental archive sync
 │   ├── process_data.py      # pandas aggregations: by year, season, month, week
 │   ├── charts.py            # Plotly figure factories (one function per chart type)
 │   └── publish_data.py      # Matplotlib figure factories (legacy static pipeline)
 │
-└── data/                    # All local data — not committed to git
+└── data/                    # Local data — not committed to git, except demo/
     ├── raw/                 # my_strava_activities.json + per-year YYYY.json files
+    ├── demo/                # Sanitized dataset backing the live demo (committed)
     ├── processed/           # Intermediate outputs from pipeline
     ├── images/              # Static PNGs from pipeline (legacy)
     ├── gear_map.json        # Bike ID → name mapping
