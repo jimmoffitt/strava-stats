@@ -1,25 +1,11 @@
-certifi==2025.11.12
-kaleido>=1.3.0
-streamlit>=1.50.0
-charset-normalizer==3.4.4
-contourpy==1.3.0
-cycler==0.12.1
-fonttools==4.60.2
-idna==3.11
-importlib_resources==6.5.2
-kiwisolver==1.4.7
-matplotlib==3.9.4
-numpy==2.0.2
-packaging==25.0
-pandas==2.3.3
-plotly>=5.18.0
-pillow==11.3.0
-pyparsing==3.3.1
-python-dateutil==2.9.0.post0
-python-dotenv==1.2.1
-pytz==2025.2
-requests==2.32.5
-six==1.17.0
-tzdata==2025.3
-urllib3==2.6.2
-zipp==3.23.0
+# Direct dependencies only — transitive packages (numpy, pillow, pytz, …)
+# resolve on their own. Loose ranges so deploy hosts (e.g. Streamlit Community
+# Cloud, currently on Python 3.14) can pick wheels for their Python version
+# instead of building old pins from source.
+streamlit>=1.50
+pandas>=2.3
+plotly>=5.18
+matplotlib>=3.9      # legacy pipeline charts (src/publish_data.py)
+requests>=2.32
+python-dotenv>=1.0
+kaleido>=1.3         # Plotly fig.to_image for the Export tab's PNG download
