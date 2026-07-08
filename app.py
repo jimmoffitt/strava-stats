@@ -1984,6 +1984,13 @@ def render_data_sync():
     st.divider()
     st.markdown("**Data Sync**")
 
+    if config.DEMO_MODE:
+        # Read-only demo build: bundled sanitized dataset, no Strava
+        # credentials on the host, so live sync is unavailable by design.
+        st.metric("Activities in archive", f"{_archive_count():,}")
+        st.caption("Demo mode — read-only sample dataset; live sync is disabled.")
+        return
+
     last = _load_last_sync()
     if last:
         total = last.get('activity_count_latest_fetch', 0)

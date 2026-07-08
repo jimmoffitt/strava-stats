@@ -21,6 +21,14 @@ data/athlete_stats.json
 # User settings — personal preferences, not shared
 data/settings.json
 
+# Demo mode (data/demo/): the sanitized activities.json and gear_map.json from
+# make_demo_data.py ARE tracked; runtime writes made while running in demo
+# mode are not.
+data/demo/settings.json
+data/demo/last_data.json
+data/demo/athlete_profile.json
+data/demo/athlete_stats.json
+
 # Generated images — regenerable by running the pipeline
 # Specific PNGs used in README documentation are tracked via explicit git add
 data/images/*.png
