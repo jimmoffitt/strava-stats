@@ -652,6 +652,10 @@ def render_bike_tab(bike_df, gear_map, settings):
         if os.path.exists(_static_map_path):
             st.image(_static_map_path, width="stretch")
 
+    # Placeholder: the Distance-by-Month chart (Year mode) renders here, directly
+    # under the annual chart but above the controls it depends on — filled below.
+    _bike_monthly_ph = st.container()
+
     # --- Controls row ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
@@ -695,14 +699,16 @@ def render_bike_tab(bike_df, gear_map, settings):
                     ("Rides",                     f"{int(r['count']):,}"),
                 ])
 
-            # Distance by Month chart for selected year
+            # Distance by Month chart for selected year, rendered in the
+            # placeholder above the controls.
             monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
             _bike_goal_series = process_data.bike_monthly_goal_series(settings)
             if dist_col == 'km':
                 _bike_goal_series = [v * 1.60934 for v in _bike_goal_series]
-            st.plotly_chart(
-                make_monthly_chart(monthly_bike, dist_col, dist_label, goal=_bike_goal_series),
-            )
+            with _bike_monthly_ph:
+                st.plotly_chart(
+                    make_monthly_chart(monthly_bike, dist_col, dist_label, goal=_bike_goal_series),
+                )
 
     # --- Dispatch to view ---
     if time_mode == "Year":
@@ -987,7 +993,13 @@ def render_swim_tab(swim_df, settings, df=None):
         if os.path.exists(_img_path):
             st.image(_img_path, width="stretch")
 
-    # --- 3. Controls ---
+    # Placeholders: the Distance-by-Month chart and its goal-pace line render
+    # here — directly under the annual overview — but depend on the Year/Units
+    # selections made just below, so they're filled in last.
+    _monthly_ph = st.container()
+    _pace_ph    = st.container()
+
+    # --- 3. Controls: Year + Units ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
@@ -1014,7 +1026,13 @@ def render_swim_tab(swim_df, settings, df=None):
         .drop(columns='_order')
     )
 
-    # --- 4. Selected-year stats + goal pace ---
+    # --- Distance by Month chart, rendered in its placeholder above the controls ---
+    with _monthly_ph:
+        st.plotly_chart(
+            make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL),
+        )
+
+    # --- Selected-year stats (below the controls); goal pace (below the chart) ---
     year_row = yearly[yearly['year'] == selected_year]
     if not year_row.empty:
         row = year_row.iloc[0]
@@ -1023,8 +1041,20 @@ def render_swim_tab(swim_df, settings, df=None):
         avg_dist = row['avg_meters'] * mult
         months_with_data = int((monthly[dist_col] > 0).sum())
         avg_monthly = total_dist / months_with_data if months_with_data else 0
-
         max_swim = swim_df['distance'].max() * mult if not swim_df.empty else 0
+
+        if goal_val > 0:
+            progress = min(avg_monthly / goal_val, 1.0)
+            with _pace_ph:
+                st.markdown(
+                    f"<div style='font-size:13px;margin:6px 0 4px'>"
+                    f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)</div>"
+                    f"<div style='background:{SWIM_TEAL_LIGHT};border-radius:4px;height:8px;overflow:hidden'>"
+                    f"<div style='width:{progress*100:.1f}%;background:{SWIM_TEAL};height:100%'></div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
         _stats_box([
             ("Total Distance", f"{total_dist:,.0f} {dist_label}"),
             ("Swims",          str(total_swims)),
@@ -1032,21 +1062,6 @@ def render_swim_tab(swim_df, settings, df=None):
             ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
             ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
         ])
-        if goal_val > 0:
-            progress = min(avg_monthly / goal_val, 1.0)
-            st.markdown(
-                f"<div style='font-size:13px;margin:6px 0 4px'>"
-                f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)</div>"
-                f"<div style='background:{SWIM_TEAL_LIGHT};border-radius:4px;height:8px;overflow:hidden'>"
-                f"<div style='width:{progress*100:.1f}%;background:{SWIM_TEAL};height:100%'></div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-    # --- 5. Monthly chart (reflects the selected year) ---
-    st.plotly_chart(
-        make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL),
-    )
 
     # --- 6. Table of contents for the list sections below ---
     _section_toc(
