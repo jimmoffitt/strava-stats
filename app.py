@@ -250,13 +250,14 @@ def _stats_box(items):
 
 
 def _all_time_line(*, distance, hours, activities, seasons, best_year,
-                   largest_month, highest, equity, avg):
+                   largest_month, highest, equity, avg, avg_time, avg_speed):
     """Render the uniform all-time stats line shared by the sport tabs.
 
     Every sport shows the same slots in the same order; values are pre-formatted
     display strings so each tab can express them in its own native units (bike
     miles, snow vertical feet, swim meters, …). The "biggest" stats run from
-    coarse to fine: best year → largest month → highest single activity.
+    coarse to fine: best year → largest month → highest single activity. The
+    trailing averages (distance, time, speed) are all per-activity.
     """
     _stats_box([
         ("All-Time Distance", distance),
@@ -268,6 +269,8 @@ def _all_time_line(*, distance, hours, activities, seasons, best_year,
         ("Highest Distance",  highest),
         ("Equity Miles",      equity),
         ("Avg Distance",      avg),
+        ("Avg Time",          avg_time),
+        ("Avg Speed",         avg_speed),
     ])
 
 
@@ -619,16 +622,20 @@ def render_bike_tab(bike_df, gear_map, settings):
         _ref   = settings.get('reference_sport', 'Bike')
         _brate = settings.get('conversions', {}).get('bike_miles_per_ref_unit', 1.0)
         _eq    = 0 if _ref == 'Bike' else (_tot / _brate if _brate else 0)
+        _hrs   = yearly_all['hours'].sum()
+        _cnt   = int(yearly_all['count'].sum())
         _all_time_line(
             distance=f"{_conv(_tot):,.0f} {_du}",
-            hours=f"{yearly_all['hours'].sum():,.0f} h",
-            activities=f"{int(yearly_all['count'].sum()):,}",
+            hours=f"{_hrs:,.0f} h",
+            activities=f"{_cnt:,}",
             seasons=str(filtered_df['year'].nunique()),
             best_year=f"{int(_best['year'])} · {_conv(_best['miles']):,.0f} {_du}",
             largest_month=f"{_conv(_lm['value']):,.0f} {_du} · {_lm['label']}",
             highest=f"{_conv(_long['distance_miles']):,.1f} {_du} · {_fmt_date(_long['start_date_local'])}",
             equity=f"{_eq:,.0f}",
             avg=f"{_conv(filtered_df['distance_miles'].mean()):,.1f} {_du}",
+            avg_time=_fmt_time(_hrs * 3600 / _cnt) if _cnt else "—",
+            avg_speed=f"{_conv(_tot) / _hrs:,.1f} {_du}/h" if _hrs else "—",
         )
 
     # --- Top row: annual distance chart (all bikes) + static heatmap thumbnail ---
@@ -771,9 +778,11 @@ def render_ski_tab(ski_df, settings):
         _lm           = ski_months_ranked.iloc[0]
         _all_eq       = _all_vert / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
         _avg_vert     = _all_vert / _all_sessions if _all_sessions else 0
+        _all_secs     = ski_df['moving_time'].sum()
+        _all_hrs      = _all_secs / 3600
         _all_time_line(
             distance=f"{_all_vert:,.0f} ft",
-            hours=f"{ski_df['moving_time'].sum() / 3600:,.0f} h",
+            hours=f"{_all_hrs:,.0f} h",
             activities=f"{_all_sessions:,}",
             seasons=str(len(seasonal_df)),
             best_year=f"{_best_season['season_label']} · {_best_season['vert_ft']:,.0f} ft",
@@ -781,6 +790,8 @@ def render_ski_tab(ski_df, settings):
             highest=f"{_big['elevation_feet']:,.0f} ft · {_fmt_date(_big['start_date_local'])}",
             equity=f"{_all_eq:,.0f}",
             avg=f"{_avg_vert:,.0f} ft",
+            avg_time=_fmt_time(_all_secs / _all_sessions) if _all_sessions else "—",
+            avg_speed=f"{_all_vert / _all_hrs:,.0f} ft/h" if _all_hrs else "—",
         )
 
     # --- 1. Top row: all-seasons overview chart (left) + snow image (right) ---
@@ -945,9 +956,11 @@ def render_swim_tab(swim_df, settings, df=None):
             settings.get('conversions', {}).get('swim_meters_per_mile', 100))
         _eq       = _all_m / _swim_per if _swim_per else 0
         _avg      = (_all_m / _all_sw) if _all_sw else 0
+        _all_secs = swim_df['moving_time'].sum()
+        _all_hrs  = _all_secs / 3600
         _all_time_line(
             distance=f"{_all_m * _mult:,.0f} {_dlabel}",
-            hours=f"{swim_df['moving_time'].sum() / 3600:,.0f} h",
+            hours=f"{_all_hrs:,.0f} h",
             activities=f"{_all_sw:,}",
             seasons=str(swim_df['year'].nunique()),
             best_year=f"{int(_best['year'])} · {_best['meters'] * _mult:,.0f} {_dlabel}",
@@ -955,6 +968,8 @@ def render_swim_tab(swim_df, settings, df=None):
             highest=f"{_long['distance'] * _mult:,.0f} {_dlabel} · {_fmt_date(_long['start_date_local'])}",
             equity=f"{_eq:,.0f}",
             avg=f"{_avg * _mult:,.0f} {_dlabel}",
+            avg_time=_fmt_time(_all_secs / _all_sw) if _all_sw else "—",
+            avg_speed=f"{_all_m * _mult / _all_hrs:,.0f} {_dlabel}/h" if _all_hrs else "—",
         )
 
     # --- 2. Multi-year overview chart (left) + pool image (right) ---
@@ -2419,14 +2434,14 @@ with st.sidebar:
     st.markdown("**View**")
     for _p in _view_pages:
         st.page_link(_p)
-    st.divider()
-    st.markdown("**Tools**")
-    for _p in _tools_pages:
-        st.page_link(_p)
+    render_data_sync()
     st.divider()
     st.markdown("**Settings**")
     for _p in _settings_pages:
         st.page_link(_p)
-    render_data_sync()
+    st.divider()
+    st.markdown("**Tools**")
+    for _p in _tools_pages:
+        st.page_link(_p)
 
 pg.run()
