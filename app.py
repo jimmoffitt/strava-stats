@@ -601,7 +601,7 @@ def render_bike_tab(bike_df, gear_map, settings):
     # Gear selection comes from session_state (the filter UI sits at the bottom).
     gear_ids = sorted(
         bike_df['gear_id'].unique().tolist(),
-        key=lambda g: gear_map.get(g, g or '') if g else '',
+        key=lambda g: gear_map.get(g, g) if isinstance(g, str) else '',
     )
     selected_gears = [
         gid for gid in gear_ids
@@ -1676,6 +1676,30 @@ def _fig_to_png(fig, width=1200, height=500):
     return fig.to_image(format='png', width=width, height=height, scale=2)
 
 
+@st.cache_resource
+def _png_export_available():
+    """Kaleido needs a Chrome/Chromium binary, which some hosts (e.g.
+    Streamlit Community Cloud) don't have. Probe once per process so the
+    Export tab can degrade to CSV-only instead of crashing."""
+    import plotly.graph_objects as go
+    try:
+        go.Figure().to_image(format='png', width=8, height=8)
+        return True
+    except Exception:
+        return False
+
+
+def _png_download_button(fig, name, key):
+    """PNG download button, or a short note where PNG rendering isn't possible."""
+    if _png_export_available():
+        st.download_button(
+            f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
+            key=key,
+        )
+    else:
+        st.caption("PNG export unavailable on this host (no Chrome for kaleido).")
+
+
 def _to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
@@ -1734,10 +1758,7 @@ def render_export_tab(df, settings):
         col = col_l if i % 2 == 0 else col_r
         with col:
             st.plotly_chart(fig, key=f"export_summary_{name}")
-            st.download_button(
-                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
-                key=f"dl_png_{name}",
-            )
+            _png_download_button(fig, name, key=f"dl_png_{name}")
 
     st.divider()
 
@@ -1813,10 +1834,7 @@ def render_export_tab(df, settings):
         col = ann_l if i % 2 == 0 else ann_r
         with col:
             st.plotly_chart(fig, key=f"export_annual_{name}")
-            st.download_button(
-                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
-                key=f"dl_annual_png_{name}",
-            )
+            _png_download_button(fig, name, key=f"dl_annual_png_{name}")
 
     st.divider()
 
@@ -1849,10 +1867,7 @@ def render_export_tab(df, settings):
         col = mo_l if i % 2 == 0 else mo_r
         with col:
             st.plotly_chart(fig, key=f"export_monthly_{name}")
-            st.download_button(
-                f"Download {name}.png", _fig_to_png(fig), f"{name}.png", "image/png",
-                key=f"dl_monthly_png_{name}",
-            )
+            _png_download_button(fig, name, key=f"dl_monthly_png_{name}")
 
     st.divider()
 
@@ -1862,8 +1877,9 @@ def render_export_tab(df, settings):
     all_figs = {**summary_figs, **annual_figs, **monthly_figs}
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for name, fig in all_figs.items():
-            zf.writestr(f"{name}.png", _fig_to_png(fig))
+        if _png_export_available():
+            for name, fig in all_figs.items():
+                zf.writestr(f"{name}.png", _fig_to_png(fig))
         for fname, (tdf, _) in tables.items():
             zf.writestr(f"{fname}.csv", tdf.to_csv(index=False))
     zip_buf.seek(0)

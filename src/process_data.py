@@ -44,6 +44,11 @@ def process_activities(activities_list):
     # Ensure gear_id exists (fill with None if missing)
     if 'gear_id' not in df.columns:
         df['gear_id'] = None
+    else:
+        # Newer pandas materializes JSON nulls as NaN — a *truthy* float that
+        # breaks the string sort and session-state keys in the gear filter UI.
+        # Normalize to None so downstream code sees one consistent null.
+        df['gear_id'] = df['gear_id'].astype(object).where(df['gear_id'].notna(), None)
 
     # 4. Apply Custom Categorization Logic
     df['final_type'] = df.apply(_determine_activity_type, axis=1)
