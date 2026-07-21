@@ -499,9 +499,11 @@ def aggregate_ski_season_by_month(ski_df, season_key, start_month=11, end_month=
     return pd.DataFrame(rows)
 
 
-def aggregate_bike_by_month(bike_df, year):
+def aggregate_bike_by_month(bike_df, year=None):
     """
-    Returns monthly distance/hours/count data for the given calendar year.
+    Returns monthly distance/hours/count data for the given calendar year,
+    or summed across every year when year is None (the all-time monthly
+    pattern — which calendar months you actually ride in).
     Columns: month, month_name, miles, km, hours, count.
     Months with no rides filled with 0.
     """
@@ -511,7 +513,7 @@ def aggregate_bike_by_month(bike_df, year):
     df['hours']  = df['moving_time'] / 3600.0
     df['km']     = df['distance'] / 1000.0
 
-    mask = df['start_date_local'].dt.year == year
+    mask = df['start_date_local'].dt.year == year if year is not None else pd.Series(True, index=df.index)
     agg = (
         df[mask].groupby('_month')
         .agg(

@@ -611,10 +611,11 @@ def render_bike_tab(bike_df, gear_map, settings):
     yearly_all = process_data.aggregate_by_year(filtered_df)
     bike_months_ranked = process_data.rank_months_by_distance(filtered_df, 'distance_miles')
 
+    _du    = 'mi' if _is_mi else 'km'
+    _conv  = (lambda mi: mi) if _is_mi else (lambda mi: mi * 1.60934)
+
     # --- All-time stats line (top) ---
     if not filtered_df.empty and not yearly_all.empty:
-        _du    = 'mi' if _is_mi else 'km'
-        _conv  = (lambda mi: mi) if _is_mi else (lambda mi: mi * 1.60934)
         _tot   = yearly_all['miles'].sum()
         _best  = yearly_all.loc[yearly_all['miles'].idxmax()]
         _long  = filtered_df.loc[filtered_df['distance_miles'].idxmax()]
@@ -638,12 +639,27 @@ def render_bike_tab(bike_df, gear_map, settings):
             avg_speed=f"{_conv(_tot) / _hrs:,.1f} {_du}/h" if _hrs else "—",
         )
 
+    # --- Top bikes by all-time miles (unaffected by the gear filter below) ---
+    if not bike_df.empty:
+        _bike_totals = (
+            bike_df.groupby('gear_id')['distance_miles'].sum()
+            .sort_values(ascending=False)
+            .head(4)
+        )
+        if not _bike_totals.empty:
+            st.markdown("**Top Bikes — All-Time Miles**")
+            _stats_box([
+                (gear_map.get(gid, gid) if gid else "Unknown Bike", f"{_conv(mi):,.0f} {_du}")
+                for gid, mi in _bike_totals.items()
+            ])
+
+    _dc, _dl = ('miles', 'Miles') if _is_mi else ('km', 'Km')
+
     # --- Top row: annual distance chart (all bikes) + static heatmap thumbnail ---
-    _chart_col, _thumb_col = st.columns([3, 1])
+    _chart_col, _thumb_col = st.columns([1, 1])
     with _chart_col:
         _yearly_unfiltered = process_data.aggregate_by_year(bike_df)
         if not _yearly_unfiltered.empty:
-            _dc, _dl = ('miles', 'Miles') if _is_mi else ('km', 'Km')
             st.plotly_chart(
                 make_year_dist_chart(_yearly_unfiltered, _dc, _dl, current_year, height=220),
             )
@@ -651,6 +667,16 @@ def render_bike_tab(bike_df, gear_map, settings):
         _static_map_path = os.path.join(config.IMAGES_DIR, 'bike_heat_map_all_time.png')
         if os.path.exists(_static_map_path):
             st.image(_static_map_path, width="stretch")
+
+    # --- All-time monthly pattern (which calendar months I actually ride) ---
+    _alltime_monthly_bike = process_data.aggregate_bike_by_month(filtered_df)
+    if _alltime_monthly_bike['count'].sum() > 0:
+        st.plotly_chart(
+            make_monthly_chart(
+                _alltime_monthly_bike, _dc, _dl,
+                title=f"All-Time {_dl} by Month",
+            ),
+        )
 
     # Placeholder: the Distance-by-Month chart (Year mode) renders here, directly
     # under the annual chart but above the controls it depends on — filled below.
@@ -1992,7 +2018,26 @@ def _run_sync():
             st.error(str(exc))
 
 
-def render_data_sync():
+def _fmt_datetime(dt):
+    """Format a Timestamp as 'M/D/YYYY, H:MM AM/PM' without leading zeros."""
+    time_str = dt.strftime('%I:%M %p').lstrip('0')
+    return f"{_fmt_date(dt)}, {time_str}"
+
+
+def _most_recent_activity_line(df):
+    """One-line summary of the latest logged activity: date/time, sport, distance."""
+    if df is None or df.empty:
+        return None
+    row = df.loc[df['start_date_local'].idxmax()]
+    when = _fmt_datetime(row['start_date_local'])
+    sport = row.get('final_type') or 'Activity'
+    dist = row.get('distance_miles') or 0
+    if dist > 0.05:
+        return f"Latest: {when} · {sport} · {dist:,.1f} mi"
+    return f"Latest: {when} · {sport}"
+
+
+def render_data_sync(df):
     """Compact data-sync footer in the sidebar. Assumes the caller is already
     inside the sidebar context (the nav block opens it). Keeps the 'Activities
     in archive' count front and center — it's the number that's satisfying to
@@ -2000,10 +2045,14 @@ def render_data_sync():
     st.divider()
     st.markdown("**Data Sync**")
 
+    _recent = _most_recent_activity_line(df)
+
     if config.DEMO_MODE:
         # Read-only demo build: bundled sanitized dataset, no Strava
         # credentials on the host, so live sync is unavailable by design.
         st.metric("Activities in archive", f"{_archive_count():,}")
+        if _recent:
+            st.caption(_recent)
         st.caption("Demo mode — read-only sample dataset; live sync is disabled.")
         return
 
@@ -2017,6 +2066,8 @@ def render_data_sync():
         if new_ct:
             status += f"  ·  ↑{new_ct} new"
         st.caption(status)
+        if _recent:
+            st.caption(_recent)
     else:
         st.caption("No sync record yet — run `python run_pipeline.py` once.")
 
@@ -2478,7 +2529,7 @@ with st.sidebar:
     st.markdown("**View**")
     for _p in _view_pages:
         st.page_link(_p)
-    render_data_sync()
+    render_data_sync(df)
     st.divider()
     st.markdown("**Settings**")
     for _p in _settings_pages:

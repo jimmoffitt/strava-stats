@@ -205,11 +205,12 @@ def make_period_comparison_chart(
     return fig
 
 
-def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None):
+def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None, title=None):
     """Bar chart of distance by month — 12 bars, 0-filled for empty months.
     Optional dashed goal line. `goal` may be a scalar (one horizontal line) or
     a sequence of 12 values for a per-month stepped goal. `color` overrides
-    the bar color (defaults to Strava orange)."""
+    the bar color (defaults to Strava orange). `title` overrides the default
+    "Distance by Month (<unit>)" heading."""
     bar_color = color or STRAVA_ORANGE
     fig = go.Figure(go.Bar(
         x=monthly_df['month_name'],
@@ -242,7 +243,7 @@ def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None):
             annotation_font_size=11,
         )
     fig.update_layout(**_base_layout(
-        title=f"Distance by Month ({dist_label})",
+        title=title or f"Distance by Month ({dist_label})",
         xaxis_title="Month",
         yaxis_title=dist_label,
         showlegend=False,
