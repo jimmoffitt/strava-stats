@@ -16,6 +16,12 @@ A sidebar-driven Streamlit app: **View** pages for Bike, Snow, Swim, Combined (c
 
 The sidebar reads top-to-bottom: **View** (the five sport/summary pages), **Data Sync** (archive count, last-sync age, and the Sync Now button), **Settings**, and **Tools**.
 
+![Sidebar View section — Bike, Snow, Swim, Combined, Wrapped](docs/screenshots/sidebar_tabs.png)
+
+Each entry swaps the entire main panel for that page — no page reload, since it's all one Streamlit app. Selecting **Snow**, for example, opens straight to the season-by-season vertical-feet view:
+
+![Snow tab, opened from the sidebar](docs/screenshots/snow_tab.png)
+
 Every sport view opens the same way: an all-time stats line (distance, hours, activities, seasons, best year, largest month, longest single activity, equity miles, and per-activity averages for distance, time, and speed), then a thin full-width overview chart showing every year at a glance, followed by a distance-by-month chart for the selected year, the period/unit controls, and a compact stats bar for the selected period. Ranked tables (longest rides/swims, biggest snow days) break distance ties by most-recent-first.
 
 **Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
@@ -51,9 +57,11 @@ Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are man
 
 ### Live data sync
 
-The sidebar shows the last sync age and total activity count. Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically.
+![Data Sync sidebar section — archive count, last sync, latest activity, Sync Now](docs/screenshots/sidebar_datasync.png)
 
-Past years are fetched once and archived. Only the current year is re-checked on each sync.
+The sidebar shows the total archive count, how long ago the last sync ran, and a one-line summary of the most recent logged activity (date/time, sport, distance). Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically so every chart reflects the new data immediately.
+
+Past years are fetched once and archived. Only the current year is re-checked on each sync, so a sync stays fast no matter how much history is in the archive.
 
 ### Other tabs
 
