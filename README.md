@@ -24,27 +24,27 @@ Each entry swaps the entire main panel for that page — no page reload, since i
 
 Every sport view opens the same way: an all-time stats line, a full-width overview chart, a distance-by-month chart for the selected year, period/unit controls, and ranked tables for the selected period.
 
-**Bike** — annual and monthly miles, week/month/year breakdowns, and a gear filter to isolate rides by bike.
+**Bike** — all-time stats; a "top bikes" ranking by lifetime miles; an annual distance chart paired with a route-heatmap thumbnail; an all-time "which months do I ride" chart; Year/Month/Week breakdowns; ranked tables for recent rides, longest rides, and top months; a gear filter; and the full interactive route heatmap at the bottom.
 
 ![Bike tab](docs/screenshots/app-ui.png)
 
-**Snow** — vertical feet by season, days on snow, and season goal progress.
+**Snow** — all-time stats in vertical feet; a season-by-season overview chart; a season detail view with goal progress and a vert-by-month chart; ranked tables for recent days, biggest days, and top months; and a full season log.
 
 ![Snow tab — season detail with goal progress and monthly vert](docs/screenshots/snow-2-ui.png)
 
-**Swim** — annual and monthly distance, goal pace, and a swim log.
+**Swim** — all-time stats; a multi-year overview chart; a Year/Units-controlled monthly breakdown with goal-pace tracking; and ranked tables for recent and longest swims.
 
 ![Swim tab — all-time stats, annual and monthly distance](docs/screenshots/swim-1-ui.png)
 
-### Live data sync
-
-![Data Sync sidebar section — archive count, last sync, latest activity, Sync Now](docs/screenshots/sidebar_datasync.png)
+## Live data sync
 
 The sidebar shows the total archive count, how long ago the last sync ran, and a one-line summary of the most recent logged activity (date/time, sport, distance). Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically so every chart reflects the new data immediately.
 
 Past years are fetched once and archived. Only the current year is re-checked on each sync, so a sync stays fast no matter how much history is in the archive.
 
-### Equity miles
+![Data Sync sidebar section — archive count, last sync, latest activity, Sync Now](docs/screenshots/sidebar_datasync.png)
+
+## Equity miles
 
 Different sports aren't directly comparable by distance, so this dashboard normalizes everything to a common "bike mile" unit:
 
@@ -60,7 +60,7 @@ The **Combined** tab stacks equity miles by sport for each year so you can see t
 
 Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are manual equity declarations — they're listed separately and excluded from calculated totals to avoid double-counting.
 
-### Other tabs
+## Other tabs
 
 **Wrapped** — pick any rolling window (last 365 days, last 30 days, a specific year or month) and a sport filter to get a period-in-review summary with charts and sport breakdown.
 
@@ -230,11 +230,7 @@ Created automatically with defaults on first run. Edit via the Settings tab or d
 
 ## Acknowledgments
 
-Built with the help of [Claude Code](https://claude.com/claude-code) as a pair‑programming assistant. Claude was used to:
+This prototype was developed using a variety of AI tools. Early designs were made with both ChatGPT and Gemini. To explore Claude Code, that project content was used to kick off a fresh effort using Claude Code. That experiment led to this repository. 
 
-- Scaffold the interactive Streamlit dashboard from an earlier static-PNG pipeline.
-- Implement the per-sport tabs (Bike, Snow, Swim, Combined, Wrapped), the cross-sport equity model, and the goal/seasons configuration UI.
-- Add the geographic ride heatmap, custom monthly goal logic, and per-tab styling.
-- Refactor data processing into `fetch / process / publish` modules and keep tests, configuration, and documentation in sync.
 
-All design decisions, data sources, and final code review were done by the human author. Claude generated code under direction; nothing was merged without inspection.
+
