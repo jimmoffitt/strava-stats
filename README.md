@@ -22,17 +22,17 @@ Each entry swaps the entire main panel for that page — no page reload, since i
 
 ![Snow tab, opened from the sidebar](docs/screenshots/snow_tab.png)
 
-Every sport view opens the same way: an all-time stats line (distance, hours, activities, seasons, best year, largest month, longest single activity, equity miles, and per-activity averages for distance, time, and speed), then a thin full-width overview chart showing every year at a glance, followed by a distance-by-month chart for the selected year, the period/unit controls, and a compact stats bar for the selected period. Ranked tables (longest rides/swims, biggest snow days) break distance ties by most-recent-first.
-
-**Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
-
-![Bike annual miles](docs/screenshots/bike_annual.png)
-![Bike annual hours](docs/screenshots/bike_hours.png)
+Every sport view opens the same way: an all-time stats line (distance, hours, activities, seasons, best year, largest month, longest single activity, equity miles, and per-activity averages for distance, time, and speed), then a thin full-width overview chart showing every year at a glance, followed by a distance-by-month chart for the selected year, the period/unit controls, and a compact stats bar for the selected period. Ranked tables (biggest snow days, longest rides/swims) break distance ties by most-recent-first.
 
 **Snow** — vertical feet by season, days on snow, biggest days, and a full season log. Stats bar shows max single day, avg vert/day, and equity miles.
 
 ![Snow tab — all-time stats and vertical feet by season](docs/screenshots/snow-1-ui.png)
 ![Snow tab — season detail with goal progress and monthly vert](docs/screenshots/snow-2-ui.png)
+
+**Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
+
+![Bike annual miles](docs/screenshots/bike_annual.png)
+![Bike annual hours](docs/screenshots/bike_hours.png)
 
 **Swim** — annual meters (or yards), monthly breakdown, goal progress bar, and a swim log. Meters/Yards toggle applies throughout.
 
