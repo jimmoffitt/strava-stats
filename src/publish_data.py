@@ -223,7 +223,15 @@ def _decode_polyline(encoded: str):
 
 def generate_bike_heatmap_png(archive_file: str, output_dir: str,
                                bike_types=None, filename='bike_heat_map_all_time.png'):
-    """Render all-time bike routes as a static PNG heatmap using matplotlib."""
+    """Render all-time bike routes as a static PNG heatmap using matplotlib.
+
+    Frames the view on the rider's home turf rather than naively autoscaling
+    to fit every point: a handful of far-flung trip rides (a vacation ride
+    across an ocean, say) would otherwise blow out the bounding box and
+    shrink the dense home cluster down to a few invisible pixels. Instead we
+    center on the median route point and size the window from the median
+    absolute deviation, which is robust to those outliers.
+    """
     if bike_types is None:
         bike_types = {'Ride', 'VirtualRide', 'EBikeRide'}
 
@@ -235,6 +243,7 @@ def generate_bike_heatmap_png(archive_file: str, output_dir: str,
         raw = json.load(f)
 
     segments = []
+    all_lats, all_lons = [], []
     for act in raw:
         if act.get('type') not in bike_types and act.get('sport_type') not in bike_types:
             continue
@@ -245,22 +254,35 @@ def generate_bike_heatmap_png(archive_file: str, output_dir: str,
         if len(coords) < 2:
             continue
         segments.append([(lon, lat) for lat, lon in coords])
+        for lat, lon in coords:
+            all_lats.append(lat)
+            all_lons.append(lon)
 
     if not segments:
         print("  No bike routes with polylines found — skipping heatmap PNG.")
         return
 
-    BG   = '#0e1117'
-    LINE = '#FC4C02'
+    BG   = '#ffffff'
+    LINE = '#e03131'
 
     fig, ax = plt.subplots(figsize=(6, 6), facecolor=BG)
     ax.set_facecolor(BG)
     ax.set_aspect('equal')
     ax.axis('off')
 
-    lc = mc.LineCollection(segments, colors=LINE, linewidths=0.4, alpha=0.35)
+    lc = mc.LineCollection(segments, colors=LINE, linewidths=0.5, alpha=0.55)
     ax.add_collection(lc)
-    ax.autoscale_view()
+
+    import statistics
+    med_lat, med_lon = statistics.median(all_lats), statistics.median(all_lons)
+    mad_lat = statistics.median(abs(v - med_lat) for v in all_lats)
+    mad_lon = statistics.median(abs(v - med_lon) for v in all_lons)
+    if mad_lat > 0 and mad_lon > 0:
+        k = 20  # ~90% of points on this rider's actual archive; tune if needed
+        ax.set_xlim(med_lon - k * mad_lon, med_lon + k * mad_lon)
+        ax.set_ylim(med_lat - k * mad_lat, med_lat + k * mad_lat)
+    else:
+        ax.autoscale_view()
 
     out_path = os.path.join(output_dir, filename)
     fig.savefig(out_path, dpi=150, bbox_inches='tight', pad_inches=0.05, facecolor=BG)

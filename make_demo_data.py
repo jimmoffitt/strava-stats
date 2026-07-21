@@ -5,9 +5,10 @@ Reads the real (gitignored) activity archive and writes data/demo/ copies
 that are safe to commit to the public repo:
 
   data/demo/activities.json — the archive with each activity reduced to the
-      whitelisted fields below. Everything else is dropped, notably GPS
-      (start_latlng / end_latlng / map polylines), heartrate, power, device
-      names, and location strings.
+      whitelisted fields below, plus map.summary_polyline (kept by choice so
+      the bike heatmap renders with real routes in the demo). Everything else
+      is dropped: exact start/end lat-lng, heartrate, power, device names,
+      and location strings.
   data/demo/gear_map.json — copy of the gear-id → display-name map so the
       bike tables show bike names.
 
@@ -47,14 +48,19 @@ REAL_GEAR_MAP = os.path.join('data', 'gear_map.json')
 DEMO_DIR      = os.path.join('data', 'demo')
 
 
+def _sanitize(act):
+    out = {k: act[k] for k in FIELD_WHITELIST if k in act}
+    poly = (act.get('map') or {}).get('summary_polyline')
+    if poly:
+        out['map'] = {'summary_polyline': poly}
+    return out
+
+
 def main():
     with open(REAL_ARCHIVE) as f:
         activities = json.load(f)
 
-    sanitized = [
-        {k: act[k] for k in FIELD_WHITELIST if k in act}
-        for act in activities
-    ]
+    sanitized = [_sanitize(act) for act in activities]
 
     os.makedirs(DEMO_DIR, exist_ok=True)
     out_path = os.path.join(DEMO_DIR, 'activities.json')
@@ -69,11 +75,14 @@ def main():
         json.dump(gear_map, f, indent=2)
 
     # Report what was kept and dropped so the result is easy to eyeball.
-    dropped = sorted({k for act in activities for k in act} - set(FIELD_WHITELIST))
+    kept = FIELD_WHITELIST + ['map.summary_polyline']
+    dropped = sorted({k for act in activities for k in act} - set(FIELD_WHITELIST) - {'map'})
+    poly_ct = sum(1 for act in sanitized if 'map' in act)
     names = sorted({act.get('name', '') for act in sanitized})
     print(f"Wrote {len(sanitized):,} activities -> {out_path}")
-    print(f"Kept fields:    {', '.join(FIELD_WHITELIST)}")
+    print(f"Kept fields:    {', '.join(kept)}")
     print(f"Dropped fields: {', '.join(dropped)}")
+    print(f"Routes with a polyline kept: {poly_ct:,}")
     print(f"Distinct activity names ({len(names)}):")
     for n in names:
         print(f"  {n}")

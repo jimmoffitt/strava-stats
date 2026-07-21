@@ -35,6 +35,9 @@ data/images/*.png
 !data/images/2_sport_stats.png
 !data/images/3_bike_stats.png
 !data/images/4_annual_stats.png
+# Bike heatmap thumbnail shown on the Bike tab — tracked so it ships to the
+# demo host too (Jim is fine with real routes being public there).
+!data/images/bike_heat_map_all_time.png
 
 # IDE
 .vscode/
