@@ -27,6 +27,7 @@ from src.charts import (
     SWIM_TEAL,
     SWIM_TEAL_LIGHT,
     make_bike_heatmap,
+    make_calendar_heatmap,
     make_equity_annual_chart,
     make_equity_monthly_chart,
     make_labeled_bar_chart,
@@ -35,6 +36,7 @@ from src.charts import (
     make_recent_months_chart,
     make_season_vert_chart,
     make_sport_breakdown_chart,
+    make_sport_breakdown_donut,
     make_swim_year_chart,
     make_year_dist_chart,
     make_year_time_chart,
@@ -1416,6 +1418,96 @@ def _render_longest_table(df, sort_col, fmt_dist, title="Longest Activities", n=
 
 
 # ---------------------------------------------------------------------------
+# Wrapped tab — its own card-based visual identity, distinct from the plain
+# _stats_box strip the other tabs share, so it reads as a "reveal" rather
+# than another stats table.
+# ---------------------------------------------------------------------------
+def _wrapped_hero(value, label, caption=None):
+    """The one headline number for the view — a bold gradient card, ≥48px
+    figure. Exactly one per Wrapped render."""
+    html = f'''
+    <div style="
+        background: linear-gradient(135deg, {STRAVA_ORANGE} 0%, #a12a06 100%);
+        border-radius: 16px;
+        padding: 28px 32px;
+        margin: 10px 0 18px 0;
+        text-align: center;
+    ">
+      <div style="font-size:13px;letter-spacing:0.08em;text-transform:uppercase;
+                  color:rgba(255,255,255,0.85);font-weight:600">{label}</div>
+      <div style="font-size:56px;font-weight:800;color:#ffffff;line-height:1.15;
+                  margin-top:6px">{value}</div>
+      {f'<div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:6px">{caption}</div>' if caption else ''}
+    </div>
+    '''
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def _wrapped_cards(items, cols=4):
+    """A row of bold accent-bordered cards — the Wrapped KPI/records/fun-facts
+    unit. items: list of dicts with 'label', 'value', and optionally 'delta'
+    (pre-signed string, e.g. '+340'), 'caption' (muted subtitle), or 'badge'
+    (emoji prefix on the label, e.g. a 🏆 PR marker)."""
+    dark = st.context.theme.type == 'dark'
+    bg          = '#21232b' if dark else '#fffaf7'
+    label_color = '#9ca3af' if dark else '#8a6a5c'
+    value_color = '#f0f0f0' if dark else '#1f1f1f'
+    caption_color = '#7d8590' if dark else '#9a8478'
+    up_color    = '#3fb950' if dark else '#16a34a'
+    down_color  = '#f85149' if dark else '#dc2626'
+
+    columns = st.columns(cols)
+    for i, item in enumerate(items):
+        delta_html = ''
+        if item.get('delta'):
+            is_up = item['delta'].strip().startswith('+')
+            dcolor = up_color if is_up else down_color
+            arrow = '▲' if is_up else '▼'
+            delta_html = (
+                f'<div style="font-size:12px;color:{dcolor};margin-top:4px">'
+                f'{arrow} {item["delta"].lstrip("+-")}</div>'
+            )
+        caption_html = (
+            f'<div style="font-size:12px;color:{caption_color};margin-top:4px">{item["caption"]}</div>'
+            if item.get('caption') else ''
+        )
+        badge = f'{item["badge"]} ' if item.get('badge') else ''
+        html = f'''
+        <div style="
+            background:{bg};
+            border-left: 4px solid {STRAVA_ORANGE};
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        ">
+          <div style="font-size:12px;color:{label_color};font-weight:600;
+                      text-transform:uppercase;letter-spacing:0.03em">{badge}{item['label']}</div>
+          <div style="font-size:26px;font-weight:700;color:{value_color};margin-top:3px">{item['value']}</div>
+          {delta_html}{caption_html}
+        </div>
+        '''
+        columns[i % cols].markdown(html, unsafe_allow_html=True)
+
+
+def _wrapped_legend_strip(label_low="Less", label_high="More"):
+    """Small 'Less -> More' swatch key for the calendar heatmap."""
+    dark = st.context.theme.type == 'dark'
+    colors = _charts_mod.CAL_HEATMAP_DARK if dark else _charts_mod.CAL_HEATMAP_LIGHT
+    text_color = '#9ca3af' if dark else '#888'
+    swatches = ''.join(
+        f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
+        f'background:{c};margin:0 2px"></span>'
+        for c in colors
+    )
+    st.markdown(
+        f'<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;'
+        f'font-size:12px;color:{text_color};margin-top:-6px">'
+        f'{label_low} {swatches} {label_high}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Wrapped tab
 # ---------------------------------------------------------------------------
 def render_wrapped_tab(df, settings, athlete_profile):
@@ -1460,29 +1552,37 @@ def render_wrapped_tab(df, settings, athlete_profile):
     who = (athlete_profile['firstname'] + " — ") if athlete_profile.get('firstname') else ""
     st.markdown(f"### {who}{selected_period} · {selected_sport}")
 
-    # --- Summary metrics (with prior-period deltas) ---
     def _delta(key):
         if not prior_totals:
             return None
         d = curr[key] - prior_totals[key]
         return f"{d:+,.0f}" if abs(d) >= 0.5 else None
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Activities",     f"{curr['activities']:,}",   _delta('activities'))
-    m2.metric("Miles",          f"{curr['miles']:,.0f}",     _delta('miles'))
-    m3.metric("Hours",          f"{curr['hours']:,.0f}",     _delta('hours'))
-    m4.metric("Elevation (ft)", f"{curr['vert_ft']:,.0f}",   _delta('vert_ft'))
+    # --- Hero: the one headline number this view leads with ---
+    _hero_delta = _delta('miles')
+    _wrapped_hero(
+        f"{curr['miles']:,.0f} mi",
+        "Total Distance",
+        caption=(f"{_hero_delta} mi vs the previous comparable period" if _hero_delta else None),
+    )
+
+    # --- KPI cards ---
+    kpi_items = [
+        {'label': 'Activities',      'value': f"{curr['activities']:,}", 'delta': _delta('activities')},
+        {'label': 'Hours',           'value': f"{curr['hours']:,.0f}",   'delta': _delta('hours')},
+        {'label': 'Elevation (ft)',  'value': f"{curr['vert_ft']:,.0f}", 'delta': _delta('vert_ft')},
+    ]
+    if athlete_profile.get('follower_count'):
+        kpi_items.append({'label': 'Followers', 'value': f"{athlete_profile['follower_count']:,}"})
+        kpi_items.append({'label': 'Following', 'value': f"{athlete_profile['friend_count']:,}"})
+    _wrapped_cards(kpi_items, cols=len(kpi_items))
     if prior_totals:
         st.caption("▲▼ vs the previous comparable period")
 
-    if athlete_profile.get('follower_count'):
-        f1, f2, _ = st.columns([1, 1, 2])
-        f1.metric("Followers", athlete_profile['follower_count'])
-        f2.metric("Following", athlete_profile['friend_count'])
-
     st.divider()
 
-    # --- Charts ---
+    # --- Charts: trend + sport breakdown ---
+    bucket_df = process_data.bucket_distance_breakdown(filtered)
     col_l, col_r = st.columns(2)
     with col_l:
         if view_mode == "By Year":
@@ -1498,9 +1598,26 @@ def render_wrapped_tab(df, settings, athlete_profile):
                 ),
             )
     with col_r:
-        st.plotly_chart(
-            make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
-        )
+        # A donut needs >= 2 slices to carry sport identity; a single-sport
+        # filter falls back to the by-type bar chart (Ride/VirtualRide/…).
+        if len(bucket_df) > 1:
+            st.plotly_chart(make_sport_breakdown_donut(bucket_df, 'Miles'))
+        else:
+            st.plotly_chart(
+                make_sport_breakdown_chart(stats['sport_breakdown'], 'miles', 'Miles'),
+            )
+
+    st.divider()
+
+    # --- Activity calendar ---
+    st.subheader("Activity Calendar")
+    daily = process_data.build_daily_totals(filtered)
+    st.plotly_chart(make_calendar_heatmap(daily, 'Miles'))
+    _wrapped_legend_strip()
+    _span_days = (filtered['start_date_local'].dt.date.max()
+                  - filtered['start_date_local'].dt.date.min()).days + 1
+    if _span_days > 371:
+        st.caption("Showing the most recent 365 days of the selected period.")
 
     st.divider()
 
@@ -1508,10 +1625,14 @@ def render_wrapped_tab(df, settings, athlete_profile):
     st.subheader("Records")
     alltime_sport = _filter_by_sport(df, selected_sport)
     records = process_data.compute_records(filtered, alltime_sport)
-    rec_cols = st.columns(3)
-    for i, rec in enumerate(records):
-        label = f"🏆 {rec['label']}" if rec['is_pr'] else rec['label']
-        rec_cols[i % 3].metric(label, rec['value'])
+    _wrapped_cards([
+        {
+            'label': rec['label'],
+            'value': rec['value'],
+            'badge': '🏆' if rec['is_pr'] else None,
+        }
+        for rec in records
+    ], cols=3)
     st.caption("🏆 = all-time best for the current activity filter")
 
     st.divider()
@@ -1519,10 +1640,14 @@ def render_wrapped_tab(df, settings, athlete_profile):
     # --- Fun Facts ---
     st.subheader("Fun Facts")
     ff = stats['fun_facts']
-    f1, f2, f3 = st.columns(3)
-    f1.metric("Everests Climbed", f"{ff['everests']:.1f}",   f"{curr['vert_ft']:,.0f} ft total")
-    f2.metric("Around the Earth", f"{ff['earth_pct']:.1f}%", f"{curr['miles']:,.0f} miles")
-    f3.metric("Days in Motion",   f"{ff['days_moving']:.1f}", f"{curr['hours']:,.0f} hours total")
+    _wrapped_cards([
+        {'label': 'Everests Climbed', 'value': f"{ff['everests']:.1f}",
+         'caption': f"{curr['vert_ft']:,.0f} ft total"},
+        {'label': 'Around the Earth', 'value': f"{ff['earth_pct']:.1f}%",
+         'caption': f"{curr['miles']:,.0f} miles"},
+        {'label': 'Days in Motion',   'value': f"{ff['days_moving']:.1f}",
+         'caption': f"{curr['hours']:,.0f} hours total"},
+    ], cols=3)
 
     st.divider()
 

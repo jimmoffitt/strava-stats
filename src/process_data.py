@@ -1302,3 +1302,79 @@ def get_eq_activities(df, settings=None):
         .sort_values('date', ascending=False)
         .reset_index(drop=True)
     )
+
+
+# Fixed color-identity order — must match charts._SPORT_COLORS exactly, since
+# a bucket's color there is looked up by this same key.
+_SPORT_BUCKETS = [
+    ('bike',   'Bike'),
+    ('swim',   'Swim'),
+    ('ski',    'Ski'),
+    ('run',    'Run'),
+    ('hike',   'Hike'),
+    ('paddle', 'Paddle'),
+    ('custom', 'Custom'),
+]
+
+
+def bucket_distance_breakdown(df):
+    """Distance-mile totals grouped into the app's fixed sport-color buckets
+    (bike/swim/ski/run/hike/paddle/custom) — for chart forms, like a donut,
+    where color must carry sport identity rather than an axis position.
+    Returns columns [bucket, label, miles], only nonzero rows, always in the
+    fixed color-order (never re-sorted by value — that's the CVD-safety
+    mechanism, see charts._SPORT_COLORS)."""
+    from src.config import (BIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES,
+                            HIKE_TYPES, PADDLE_TYPES)
+    if df.empty:
+        return pd.DataFrame(columns=['bucket', 'label', 'miles'])
+
+    type_map = {
+        'bike': BIKE_TYPES, 'run': RUN_TYPES, 'ski': SKI_TYPES,
+        'swim': SWIM_TYPES, 'hike': HIKE_TYPES, 'paddle': PADDLE_TYPES,
+    }
+
+    def _bucket(t):
+        for key, types in type_map.items():
+            if t in types:
+                return key
+        return 'custom'
+
+    d = df.copy()
+    d['_bucket'] = d['final_type'].apply(_bucket)
+    totals = d.groupby('_bucket')['distance_miles'].sum()
+
+    rows = [
+        {'bucket': key, 'label': label, 'miles': totals.get(key, 0)}
+        for key, label in _SPORT_BUCKETS
+        if totals.get(key, 0) > 0
+    ]
+    return pd.DataFrame(rows, columns=['bucket', 'label', 'miles'])
+
+
+def build_daily_totals(df, max_days=371):
+    """Per-day activity totals for a calendar-heatmap view, clipped to the
+    trailing ``max_days`` of the filtered range (a multi-year 'All time'
+    selection would otherwise produce thousands of cells for one grid).
+    Returns columns: date, weekday (0=Mon .. 6=Sun), week_idx, miles, count —
+    every day in range is present, zero-filled where there's no activity."""
+    cols = ['date', 'weekday', 'week_idx', 'miles', 'count']
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    d = df.copy()
+    d['_date'] = d['start_date_local'].dt.date
+    end = d['_date'].max()
+    start = max(d['_date'].min(), end - timedelta(days=max_days - 1))
+    d = d[d['_date'] >= start]
+
+    daily = d.groupby('_date').agg(
+        miles=('distance_miles', 'sum'),
+        count=('id', 'count'),
+    )
+    all_days = pd.date_range(start, end, freq='D').date
+    daily = daily.reindex(all_days, fill_value=0).rename_axis('date').reset_index()
+
+    daily['weekday']  = daily['date'].apply(lambda x: x.weekday())
+    daily['week_idx'] = daily['date'].apply(lambda x: (x - start).days // 7)
+    return daily[cols]

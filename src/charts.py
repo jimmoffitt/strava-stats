@@ -21,6 +21,27 @@ RUN_PURPLE    = '#8B5CF6'
 HIKE_GREEN    = '#22C55E'
 PADDLE_AMBER  = '#F59E0B'   # amber — distinct from swim teal and ski blue
 CUSTOM_GRAY   = '#9CA3AF'
+SWIM_TEAL     = '#00B4D8'
+SKI_BLUE      = '#1D4ED8'
+
+# Fixed hue order (never cycled) — the CVD-safety mechanism for every chart
+# that breaks activities down by sport. Must match process_data._SPORT_BUCKETS.
+_SPORT_COLORS = [
+    ('bike',   STRAVA_ORANGE, 'Bike'),
+    ('swim',   SWIM_TEAL,     'Swim'),
+    ('ski',    SKI_BLUE,      'Ski'),
+    ('run',    RUN_PURPLE,    'Run'),
+    ('hike',   HIKE_GREEN,    'Hike'),
+    ('paddle', PADDLE_AMBER,  'Paddle'),
+    ('custom', CUSTOM_GRAY,   'Custom'),
+]
+
+# Calendar-heatmap sequential ramp (orange, single-hue light->dark), 0=no
+# activity (neutral, not part of the hue ramp) .. 3=highest tercile among
+# active days. Validated with scripts/validate_palette.js --ordinal: light-end
+# contrast >= 2:1 and adjacent step gaps all clear, both modes.
+CAL_HEATMAP_LIGHT = ['#eeeeee', '#fd976c', '#fc6728', '#ca3d02']
+CAL_HEATMAP_DARK  = ['#2a2d35', '#b43d0d', '#d64408', '#FC4C02']
 
 # ---------------------------------------------------------------------------
 # Theme system — call set_theme(dark) once per Streamlit render cycle from
@@ -274,7 +295,37 @@ def make_sport_breakdown_chart(sport_df, dist_col, dist_label):
     return fig
 
 
-SWIM_TEAL = '#00B4D8'
+def make_sport_breakdown_donut(bucket_df, value_label, height=None):
+    """Donut chart of distance broken into the app's fixed sport-color
+    buckets (see process_data.bucket_distance_breakdown) — a part-to-whole
+    view, so color has to carry sport identity. Fixed hue order (never
+    resorted by value); wedges get a surface-color ring to separate them
+    (the pie/donut equivalent of the bar-chart surface gap) and outside
+    percent labels so identity never depends on color alone."""
+    color_map = {key: color for key, color, _ in _SPORT_COLORS}
+    colors = [color_map.get(b, CUSTOM_GRAY) for b in bucket_df['bucket']]
+
+    fig = go.Figure(go.Pie(
+        labels=bucket_df['label'],
+        values=bucket_df['miles'],
+        hole=0.55,
+        sort=False,
+        marker=dict(colors=colors, line=dict(color=_paper_bg(), width=2)),
+        textinfo='percent',
+        textposition='outside',
+        hovertemplate='%{label}: %{value:,.0f} ' + value_label.lower() + ' (%{percent})<extra></extra>',
+    ))
+    layout = _base_layout(
+        title=f"Distance by Sport ({value_label})",
+        showlegend=True,
+        legend=dict(orientation='h', yanchor='top', y=-0.05, xanchor='center', x=0.5),
+    )
+    if height:
+        layout['height'] = height
+    fig.update_layout(**layout)
+    return fig
+
+
 SWIM_TEAL_LIGHT = '#90E0EF'
 
 
@@ -330,7 +381,6 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
     return fig
 
 
-SKI_BLUE = '#1D4ED8'       # deeper indigo-blue — distinct from swim teal
 SKI_BLUE_LIGHT = '#93C5FD'
 
 
@@ -417,15 +467,6 @@ def make_equity_annual_chart(equity_df, current_year, ref_label='Bike', height=N
     """
     fig = go.Figure()
 
-    _SPORT_COLORS = [
-        ('bike',   STRAVA_ORANGE, 'Bike'),
-        ('swim',   SWIM_TEAL,     'Swim'),
-        ('ski',    SKI_BLUE,      'Ski'),
-        ('run',    RUN_PURPLE,    'Run'),
-        ('hike',   HIKE_GREEN,    'Hike'),
-        ('paddle', PADDLE_AMBER,  'Paddle'),
-        ('custom', CUSTOM_GRAY,   'Custom'),
-    ]
     x = equity_df['year'].astype(str)
     for col, color, label in _SPORT_COLORS:
         if col in equity_df.columns and equity_df[col].sum() > 0:
@@ -530,15 +571,6 @@ def make_equity_monthly_chart(monthly_df, ref_label='Bike', goal=None):
     """
     fig = go.Figure()
 
-    _SPORT_COLORS = [
-        ('bike',   STRAVA_ORANGE, 'Bike'),
-        ('swim',   SWIM_TEAL,     'Swim'),
-        ('ski',    SKI_BLUE,      'Ski'),
-        ('run',    RUN_PURPLE,    'Run'),
-        ('hike',   HIKE_GREEN,    'Hike'),
-        ('paddle', PADDLE_AMBER,  'Paddle'),
-        ('custom', CUSTOM_GRAY,   'Custom'),
-    ]
     for col, color, label in _SPORT_COLORS:
         if col in monthly_df.columns and monthly_df[col].sum() > 0:
             fig.add_trace(go.Bar(
@@ -604,4 +636,87 @@ def make_bike_heatmap(routes: list, center_lat: float, center_lon: float,
         height=height,
         paper_bgcolor=_paper_bg(),
     )
+    return fig
+
+
+def make_calendar_heatmap(daily_df, value_label='Miles', height=200):
+    """GitHub-contribution-graph-style calendar heatmap: one column per week,
+    one row per weekday, cell shade = that day's activity level.
+
+    Levels are quantized into 3 relative tiers (terciles) among the *active*
+    days in daily_df, plus a 4th neutral tier for no-activity days — relative
+    binning so the graph is legible whether the period was a light month or a
+    peak training block, rather than fixed absolute thresholds.
+    daily_df — from process_data.build_daily_totals: one row per day, columns
+    date/weekday/week_idx/miles/count.
+    """
+    if daily_df.empty:
+        return go.Figure()
+
+    active = daily_df.loc[daily_df['miles'] > 0, 'miles']
+    q1, q2 = active.quantile([1 / 3, 2 / 3]) if not active.empty else (0, 0)
+
+    def _level(v):
+        if v <= 0:
+            return 0
+        if v <= q1:
+            return 1
+        if v <= q2:
+            return 2
+        return 3
+
+    n_weeks = int(daily_df['week_idx'].max()) + 1
+    z = [[0] * n_weeks for _ in range(7)]
+    hover = [[''] * n_weeks for _ in range(7)]
+    for row in daily_df.itertuples():
+        wd, wk = row.weekday, row.week_idx
+        z[wd][wk] = _level(row.miles)
+        day_str = row.date.strftime('%a %b ') + str(row.date.day)
+        hover[wd][wk] = (
+            f"{day_str}<br>{row.miles:,.1f} {value_label.lower()} · {row.count} activities"
+            if row.miles > 0 else f"{day_str}<br>No activity"
+        )
+
+    colors = CAL_HEATMAP_DARK if _dark else CAL_HEATMAP_LIGHT
+    colorscale = [
+        [0.00, colors[0]], [0.25, colors[0]],
+        [0.25, colors[1]], [0.50, colors[1]],
+        [0.50, colors[2]], [0.75, colors[2]],
+        [0.75, colors[3]], [1.00, colors[3]],
+    ]
+
+    # Month tick labels at each month's first appearance in the grid. Skip a
+    # label that would sit fewer than 2 week-columns after the previous one
+    # (e.g. a period starting mid-month) — abbreviations collide at that
+    # spacing, and the following month's label is only a couple weeks away.
+    month_ticks, month_labels, seen = [], [], set()
+    for row in daily_df.sort_values(['week_idx', 'weekday']).itertuples():
+        key = (row.date.year, row.date.month)
+        if key not in seen:
+            seen.add(key)
+            if month_ticks and row.week_idx - month_ticks[-1] < 2:
+                continue
+            month_ticks.append(row.week_idx)
+            month_labels.append(row.date.strftime('%b'))
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=list(range(n_weeks)),
+        y=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        customdata=hover,
+        hovertemplate='%{customdata}<extra></extra>',
+        colorscale=colorscale,
+        zmin=0, zmax=3,
+        xgap=3, ygap=3,
+        showscale=False,
+    ))
+    fig.update_xaxes(
+        tickmode='array', tickvals=month_ticks, ticktext=month_labels,
+        side='top', showgrid=False, zeroline=False, tickangle=0,
+    )
+    fig.update_yaxes(showgrid=False, zeroline=False, autorange='reversed')
+    fig.update_layout(**_base_layout(
+        height=height,
+        margin=dict(t=30, b=10, l=40, r=10),
+    ))
     return fig
