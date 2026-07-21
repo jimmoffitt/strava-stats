@@ -6,7 +6,7 @@ A sidebar-driven Streamlit app: **View** pages for Bike, Snow, Swim, Combined (c
 
 **🚀 Live demo: [strava-stats-1.streamlit.app](https://strava-stats-1.streamlit.app/)** — a read-only build with a sanitized copy of the real dataset (see [How the demo works](#how-the-demo-works)). Works nicely on a phone too: open it in Safari and use Share → *Add to Home Screen*.
 
-![Strava Stats dashboard](docs/screenshots/app-ui.png)
+![Strava Stats dashboard — Snow tab](docs/screenshots/snow_tab.png)
 
 ---
 
@@ -18,26 +18,31 @@ The sidebar reads top-to-bottom: **View** (the five sport/summary pages), **Data
 
 ![Sidebar View section — Bike, Snow, Swim, Combined, Wrapped](docs/screenshots/sidebar_tabs.png)
 
-Each entry swaps the entire main panel for that page — no page reload, since it's all one Streamlit app. Selecting **Snow**, for example, opens straight to the season-by-season vertical-feet view:
+Each entry swaps the entire main panel for that page — no page reload, since it's all one Streamlit app. The screenshot at the top of this page is the **Snow** view, opened straight from that sidebar.
 
-![Snow tab, opened from the sidebar](docs/screenshots/snow_tab.png)
+### Sport summaries
 
-Every sport view opens the same way: an all-time stats line (distance, hours, activities, seasons, best year, largest month, longest single activity, equity miles, and per-activity averages for distance, time, and speed), then a thin full-width overview chart showing every year at a glance, followed by a distance-by-month chart for the selected year, the period/unit controls, and a compact stats bar for the selected period. Ranked tables (biggest snow days, longest rides/swims) break distance ties by most-recent-first.
+Every sport view opens the same way: an all-time stats line, a full-width overview chart, a distance-by-month chart for the selected year, period/unit controls, and ranked tables for the selected period.
 
-**Snow** — vertical feet by season, days on snow, biggest days, and a full season log. Stats bar shows max single day, avg vert/day, and equity miles.
+**Bike** — annual and monthly miles, week/month/year breakdowns, and a gear filter to isolate rides by bike.
 
-![Snow tab — all-time stats and vertical feet by season](docs/screenshots/snow-1-ui.png)
+![Bike tab](docs/screenshots/app-ui.png)
+
+**Snow** — vertical feet by season, days on snow, and season goal progress.
+
 ![Snow tab — season detail with goal progress and monthly vert](docs/screenshots/snow-2-ui.png)
 
-**Bike** — annual miles and hours, month/week comparison charts (selected period vs. prior year vs. current in-progress), and a gear filter to isolate rides by bike.
-
-![Bike annual miles](docs/screenshots/bike_annual.png)
-![Bike annual hours](docs/screenshots/bike_hours.png)
-
-**Swim** — annual meters (or yards), monthly breakdown, goal progress bar, and a swim log. Meters/Yards toggle applies throughout.
+**Swim** — annual and monthly distance, goal pace, and a swim log.
 
 ![Swim tab — all-time stats, annual and monthly distance](docs/screenshots/swim-1-ui.png)
-![Swim tab — goal pace, year stats, and swim log](docs/screenshots/swim-2-ui.png)
+
+### Live data sync
+
+![Data Sync sidebar section — archive count, last sync, latest activity, Sync Now](docs/screenshots/sidebar_datasync.png)
+
+The sidebar shows the total archive count, how long ago the last sync ran, and a one-line summary of the most recent logged activity (date/time, sport, distance). Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically so every chart reflects the new data immediately.
+
+Past years are fetched once and archived. Only the current year is re-checked on each sync, so a sync stays fast no matter how much history is in the archive.
 
 ### Equity miles
 
@@ -54,14 +59,6 @@ The **Combined** tab stacks equity miles by sport for each year so you can see t
 ![Combined tab — equity miles stacked by sport, per year](docs/screenshots/combined_annual.png)
 
 Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are manual equity declarations — they're listed separately and excluded from calculated totals to avoid double-counting.
-
-### Live data sync
-
-![Data Sync sidebar section — archive count, last sync, latest activity, Sync Now](docs/screenshots/sidebar_datasync.png)
-
-The sidebar shows the total archive count, how long ago the last sync ran, and a one-line summary of the most recent logged activity (date/time, sport, distance). Click **Sync Now** to pull new activities from Strava without leaving the browser — it runs an incremental fetch, clears the data cache, and reloads automatically so every chart reflects the new data immediately.
-
-Past years are fetched once and archived. Only the current year is re-checked on each sync, so a sync stays fast no matter how much history is in the archive.
 
 ### Other tabs
 
