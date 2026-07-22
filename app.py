@@ -22,6 +22,10 @@ import streamlit.components.v1 as _components
 from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
+    HIKE_GREEN,
+    HIKE_GREEN_LIGHT,
+    RUN_PURPLE,
+    RUN_PURPLE_LIGHT,
     SKI_BLUE,
     SKI_BLUE_LIGHT,
     STRAVA_ORANGE,
@@ -42,7 +46,7 @@ from src.charts import (
     make_year_dist_chart,
     make_year_time_chart,
 )
-from src.config import BIKE_TYPES, GEAR_FALLBACKS, SKI_TYPES, SWIM_TYPES
+from src.config import BIKE_TYPES, GEAR_FALLBACKS, HIKE_TYPES, RUN_TYPES, SKI_TYPES, SWIM_TYPES
 
 # ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
@@ -1209,6 +1213,170 @@ def render_swim_tab(swim_df, settings, df=None):
         )
 
 
+# ---------------------------------------------------------------------------
+# Shared tab — Running / Hiking (sports without a dedicated photo, gear
+# heatmap, or goal-progress bells; same section order as Bike/Snow/Swim
+# otherwise: all-time stats, annual chart, all-time monthly chart, a year
+# section, ranked tables, and an Experiments section).
+# ---------------------------------------------------------------------------
+def render_activity_tab(df, gear_map, settings, *, sport_key, label, color, color_light=None,
+                        count_noun='Activities', gear_noun='Gear', ref_label=None):
+    if df.empty:
+        st.info(f"No {label.lower()} activities found in the archive.")
+        return
+
+    current_year = date.today().year
+
+    # Gear selection comes from session_state (the filter UI sits near the
+    # bottom) — only meaningful if this sport actually has gear tagged.
+    gear_ids = sorted(
+        df['gear_id'].dropna().unique().tolist(),
+        key=lambda g: gear_map.get(g, g) if isinstance(g, str) else '',
+    )
+    has_gear = len(gear_ids) > 0
+    if has_gear:
+        selected_gears = [
+            gid for gid in gear_ids
+            if st.session_state.get(f"{sport_key}_gear_{gid}", True)
+        ]
+        filtered_df = df[df['gear_id'].isin(selected_gears)]
+    else:
+        filtered_df = df
+
+    yearly_all = process_data.aggregate_by_year(filtered_df)
+    months_ranked = process_data.rank_months_by_distance(filtered_df, 'distance_miles')
+
+    # --- All-time stats line (full width — no photo for this sport) ---
+    if not filtered_df.empty and not yearly_all.empty:
+        _tot   = yearly_all['miles'].sum()
+        _best  = yearly_all.loc[yearly_all['miles'].idxmax()]
+        _long  = filtered_df.loc[filtered_df['distance_miles'].idxmax()]
+        _lm    = months_ranked.iloc[0]
+        _ref   = settings.get('reference_sport', 'Bike')
+        _rate_key = {'run': 'run_miles_per_ref_unit', 'hike': 'hike_miles_per_ref_unit'}.get(sport_key)
+        _rate  = settings.get('conversions', {}).get(_rate_key, 1.0) if _rate_key else 1.0
+        _eq    = 0 if _ref == ref_label else (_tot / _rate if _rate else 0)
+        _hrs   = yearly_all['hours'].sum()
+        _cnt   = int(yearly_all['count'].sum())
+        _all_time_line(
+            distance=f"{_tot:,.0f} mi",
+            hours=f"{_hrs:,.0f} h",
+            activities=f"{_cnt:,}",
+            seasons=str(filtered_df['year'].nunique()),
+            best_year=f"{int(_best['year'])} · {_best['miles']:,.0f} mi",
+            largest_month=f"{_lm['value']:,.0f} mi · {_lm['label']}",
+            highest=f"{_long['distance_miles']:,.1f} mi · {_fmt_date(_long['start_date_local'])}",
+            equity=f"{_eq:,.0f}",
+            avg=f"{filtered_df['distance_miles'].mean():,.1f} mi",
+            avg_time=_fmt_time(_hrs * 3600 / _cnt) if _cnt else "—",
+            avg_speed=f"{_tot / _hrs:,.1f} mi/h" if _hrs else "—",
+        )
+
+    # --- Top gear by all-time miles (unaffected by the gear filter below) ---
+    if has_gear:
+        _gear_totals = (
+            df.groupby('gear_id')['distance_miles'].sum()
+            .sort_values(ascending=False)
+            .head(4)
+        )
+        if not _gear_totals.empty:
+            st.markdown(f"**Top {gear_noun} — All-Time Miles**")
+            _stats_box([
+                (gear_map.get(gid, gid), f"{mi:,.0f} mi")
+                for gid, mi in _gear_totals.items()
+            ])
+
+    # --- Annual distance chart (full width) ---
+    _yearly_unfiltered = process_data.aggregate_by_year(df)
+    if not _yearly_unfiltered.empty:
+        st.plotly_chart(
+            make_year_dist_chart(_yearly_unfiltered, 'miles', 'Miles', current_year, height=220,
+                                 color=color, color_light=color_light),
+        )
+
+    # --- All-time monthly pattern ---
+    _alltime_monthly = process_data.aggregate_bike_by_month(filtered_df)
+    if _alltime_monthly['count'].sum() > 0:
+        st.plotly_chart(
+            make_monthly_chart(
+                _alltime_monthly, 'miles', 'Miles',
+                title="All-Time Miles by Month", color=color,
+            ),
+        )
+
+    # --- Year section: selector + monthly chart + stats box ---
+    available_years = sorted(filtered_df['year'].unique().tolist(), reverse=True) if not filtered_df.empty else []
+    year_key = f'{sport_key}_year'
+    _cur_yr = st.session_state.get(year_key)
+    if _cur_yr not in available_years:
+        st.session_state[year_key] = available_years[0] if available_years else None
+    selected_year = st.selectbox("Year", available_years, key=year_key)
+
+    if selected_year is not None and not yearly_all.empty:
+        yr_row = yearly_all[yearly_all['year'] == selected_year]
+        max_dist = filtered_df[filtered_df['year'] == selected_year]['distance_miles'].max() \
+                   if not filtered_df[filtered_df['year'] == selected_year].empty else 0
+
+        monthly = process_data.aggregate_bike_by_month(filtered_df, selected_year)
+        st.plotly_chart(
+            make_monthly_chart(monthly, 'miles', 'Miles', color=color),
+        )
+
+        if not yr_row.empty:
+            r = yr_row.iloc[0]
+            _stats_box([
+                (f"{selected_year} Distance", f"{r['miles']:,.0f} mi"),
+                ("Longest",                   f"{max_dist:,.1f} mi"),
+                ("Hours",                     f"{r['hours']:,.0f} h"),
+                (count_noun,                  f"{int(r['count']):,}"),
+            ])
+
+    fmt_activity = lambda r: f"{r['distance_miles']:,.1f} mi"
+
+    # --- Table of contents for the list sections below ---
+    _section_toc(
+        [(f"Most Recent {count_noun}", f"most-recent-{count_noun.lower()}"),
+         (f"Longest {count_noun}",     f"longest-{count_noun.lower()}"),
+         ("Top Ten Months",            "top-ten-months-by-distance")],
+        color,
+    )
+
+    st.divider()
+    _render_recent_table(filtered_df, fmt_activity, f"Most Recent {count_noun}", key_prefix=sport_key)
+
+    st.divider()
+    _render_longest_table(filtered_df, 'distance_miles', fmt_activity, f"Longest {count_noun}")
+
+    st.divider()
+    _render_top_months_table(months_ranked, lambda v: f"{v:,.0f} mi")
+
+    # --- Gear filter (bottom), only if this sport has gear tagged ---
+    if has_gear:
+        st.divider()
+        st.markdown(f"**Filter by {gear_noun.lower()}:**")
+        gear_cols = st.columns(min(len(gear_ids), 4))
+        for i, gid in enumerate(gear_ids):
+            gear_cols[i % len(gear_cols)].checkbox(
+                gear_map.get(gid, gid), value=True, key=f"{sport_key}_gear_{gid}",
+            )
+
+    # --- Experiments: Month/Week comparison tooling ---
+    st.divider()
+    st.subheader("Experiments")
+    activity_time_mode = st.radio(
+        "Compare", ["Month", "Week"], horizontal=True, key=f"{sport_key}_time_mode",
+    )
+    if activity_time_mode == "Month":
+        render_month_view(
+            filtered_df, 'Miles', key_prefix=sport_key, value_col='distance_miles',
+            value_label='Distance', count_label=count_noun, color=color,
+        )
+    else:
+        render_week_view(
+            filtered_df, 'Miles', key_prefix=sport_key, value_col='distance_miles',
+            value_label='Distance', count_label=count_noun, color=color,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Mile Equity tab
@@ -2346,6 +2514,26 @@ def render_settings_section(settings, section):
 
     # ---- Sports ----
     if section == "sports":
+        st.subheader("Primary Sport Tabs")
+        st.caption(
+            "Which sports get a dedicated tab in the View section of the sidebar. "
+            "Combined and Wrapped always include every sport regardless of these — "
+            "this only controls which sports get their own tab."
+        )
+        saved_tabs = settings.get('sport_tabs', {})
+        tcol_bike, tcol_snow, tcol_swim, tcol_run, tcol_hike = st.columns(5)
+        with tcol_bike:
+            tab_bike = st.checkbox("Bike", value=saved_tabs.get('bike', True), key="settings_tab_bike")
+        with tcol_snow:
+            tab_snow = st.checkbox("Snow", value=saved_tabs.get('snow', True), key="settings_tab_snow")
+        with tcol_swim:
+            tab_swim = st.checkbox("Swim", value=saved_tabs.get('swim', True), key="settings_tab_swim")
+        with tcol_run:
+            tab_run = st.checkbox("Running", value=saved_tabs.get('run', False), key="settings_tab_run")
+        with tcol_hike:
+            tab_hike = st.checkbox("Hiking", value=saved_tabs.get('hike', False), key="settings_tab_hike")
+
+        st.divider()
         st.subheader("Reference Sport")
         st.caption(
             "Equity miles are expressed in units of this sport. "
@@ -2431,6 +2619,13 @@ def render_settings_section(settings, section):
         if st.button("Save settings", type="primary"):
             _save(
                 reference_sport=ref_sport,
+                sport_tabs={
+                    'bike': tab_bike,
+                    'snow': tab_snow,
+                    'swim': tab_swim,
+                    'run':  tab_run,
+                    'hike': tab_hike,
+                },
                 conversions={
                     'bike_miles_per_ref_unit':   bike_rate,
                     'run_miles_per_ref_unit':    run_rate,
@@ -2674,6 +2869,8 @@ _eq_mask = df['name'].str.match(process_data._EQ_PATTERN, na=False)
 bike_df  = df[df['final_type'].isin(BIKE_TYPES)  & ~_eq_mask].copy()
 ski_df   = df[df['final_type'].isin(SKI_TYPES)   & ~_eq_mask].copy()
 swim_df  = df[df['final_type'].isin(SWIM_TYPES)  & ~_eq_mask].copy()
+run_df   = df[df['final_type'].isin(RUN_TYPES)   & ~_eq_mask].copy()
+hike_df  = df[df['final_type'].isin(HIKE_TYPES)  & ~_eq_mask].copy()
 
 # On first render of each browser session, sync localStorage to the saved theme
 # preference.  Subsequent renders skip this (initial_theme_synced is set) so
@@ -2695,6 +2892,12 @@ if not st.session_state.get('initial_theme_synced'):
 def _p_bike():     render_bike_tab(bike_df, gear_map, settings)
 def _p_snow():     render_ski_tab(ski_df, settings)
 def _p_swim():     render_swim_tab(swim_df, settings, df)
+def _p_run():      render_activity_tab(run_df, gear_map, settings, sport_key='run', label='Running',
+                                        color=RUN_PURPLE, color_light=RUN_PURPLE_LIGHT,
+                                        count_noun='Runs', gear_noun='Shoes', ref_label='Run')
+def _p_hike():     render_activity_tab(hike_df, gear_map, settings, sport_key='hike', label='Hiking',
+                                        color=HIKE_GREEN, color_light=HIKE_GREEN_LIGHT,
+                                        count_noun='Hikes', gear_noun='Shoes', ref_label='Hike')
 def _p_combined(): render_equity_tab(df, settings)
 def _p_wrapped():  render_wrapped_tab(df, settings, athlete_profile)
 def _p_explore():  render_explore_tab(df, gear_map)
@@ -2705,18 +2908,36 @@ def _p_set_seasons(): render_settings_section(settings, "seasons")
 def _p_set_map():     render_settings_section(settings, "map")
 def _p_set_appear():  render_settings_section(settings, "appearance")
 
-# Open on the reference sport's view. Among the reference options (Bike/Run/Hike)
-# only Bike has a dedicated view, so Run/Hike fall back to Bike.
-_default_path = {"Bike": "bike"}.get(settings.get('reference_sport', 'Bike'), 'bike')
+# Which sport tabs are enabled, in the fixed View order — Combined/Wrapped
+# always show every sport regardless of this and are appended separately.
+_sport_tab_settings = settings.get('sport_tabs', {})
+_sport_page_specs = [
+    ('bike', _p_bike, "Bike",    "🚴", "bike"),
+    ('snow', _p_snow, "Snow",    "⛷️", "snow"),
+    ('swim', _p_swim, "Swim",    "🏊", "swim"),
+    ('run',  _p_run,  "Running", "🏃", "run"),
+    ('hike', _p_hike, "Hiking",  "🥾", "hike"),
+]
+_enabled_sport_specs = [s for s in _sport_page_specs if _sport_tab_settings.get(s[0], False)]
+_enabled_sport_paths = [s[4] for s in _enabled_sport_specs]
+
+# Open on the reference sport's view when it has a dedicated tab enabled;
+# otherwise the first enabled sport tab; otherwise Combined.
+_ref_path = {"Bike": "bike", "Run": "run", "Hike": "hike"}.get(settings.get('reference_sport', 'Bike'))
+if _ref_path in _enabled_sport_paths:
+    _default_path = _ref_path
+elif _enabled_sport_paths:
+    _default_path = _enabled_sport_paths[0]
+else:
+    _default_path = "combined"
 
 def _page(fn, title, icon, path):
     return st.Page(fn, title=title, icon=icon, url_path=path,
                    default=(path == _default_path))
 
 _view_pages = [
-    _page(_p_bike,     "Bike",     "🚴", "bike"),
-    _page(_p_snow,     "Snow",     "⛷️", "snow"),
-    _page(_p_swim,     "Swim",     "🏊", "swim"),
+    _page(fn, title, icon, path) for _, fn, title, icon, path in _enabled_sport_specs
+] + [
     _page(_p_combined, "Combined", "➕", "combined"),
     _page(_p_wrapped,  "Wrapped",  "🎁", "wrapped"),
 ]

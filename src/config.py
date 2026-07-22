@@ -96,6 +96,16 @@ if DEMO_MODE:
 DEFAULT_SETTINGS = {
     'theme': 'light',
     'reference_sport': 'Bike',
+    # Which sport tabs show in the sidebar's View group. Off by default for
+    # sports with no dedicated tab UI until a user opts in — keeps existing
+    # deployments (and the demo) looking exactly as they do today.
+    'sport_tabs': {
+        'bike': True,
+        'snow': True,
+        'swim': True,
+        'run':  False,
+        'hike': False,
+    },
     'conversions': {
         # Distance sports: X miles of this sport = 1 equity unit
         # Reference sport is always 1.0 regardless of what's stored here.

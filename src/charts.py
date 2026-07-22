@@ -18,7 +18,9 @@ SHADOW_GRAY = 'rgba(150, 150, 150, 0.25)'
 
 # Equity sport palette
 RUN_PURPLE    = '#8B5CF6'
+RUN_PURPLE_LIGHT = '#BFA5FA'
 HIKE_GREEN    = '#22C55E'
+HIKE_GREEN_LIGHT = '#85DFA6'
 PADDLE_AMBER  = '#F59E0B'   # amber — distinct from swim teal and ski blue
 CUSTOM_GRAY   = '#9CA3AF'
 SWIM_TEAL     = '#00B4D8'
@@ -87,14 +89,18 @@ def _base_layout(**kwargs) -> dict:
 # Chart factories
 # ---------------------------------------------------------------------------
 
-def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=None):
+def make_year_dist_chart(yearly_df, dist_col, dist_label, current_year, height=None,
+                         color=None, color_light=None):
     """
     Bar chart of distance by year.
-    Current year bar uses light tint (YTD); prior years use Strava orange.
+    Current year bar uses light tint (YTD); prior years use Strava orange by
+    default — pass color/color_light to theme it for another sport.
     Pass height (px) for a thin/compact variant.
     """
+    bar_color = color or STRAVA_ORANGE
+    bar_color_light = color_light or STRAVA_ORANGE_LIGHT
     colors = [
-        STRAVA_ORANGE_LIGHT if int(row['year']) >= current_year else STRAVA_ORANGE
+        bar_color_light if int(row['year']) >= current_year else bar_color
         for _, row in yearly_df.iterrows()
     ]
 
