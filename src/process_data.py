@@ -85,25 +85,25 @@ def aggregate_by_year(bike_df):
     return agg
 
 
-def aggregate_by_month(bike_df, year, month):
+def aggregate_by_month(df, year, month, value_col='distance_miles'):
     """
-    Returns a DataFrame with one row per day-of-month for the given year/month.
-    Missing days are filled with 0s.
+    Returns a DataFrame with one row per day-of-month for the given year/month,
+    summing ``value_col`` (bike/snow/swim all share this — just point it at
+    distance_miles, elevation_feet, or distance). Missing days filled with 0s.
+    Columns: day, value, hours, count.
     """
     import calendar
-    bike_df = bike_df.copy()
-    bike_df['km'] = bike_df['distance'] / 1000.0
-    bike_df['hours'] = bike_df['moving_time'] / 3600.0
-    bike_df['day'] = bike_df['start_date_local'].dt.day
+    df = df.copy()
+    df['hours'] = df['moving_time'] / 3600.0
+    df['day'] = df['start_date_local'].dt.day
 
-    mask = (bike_df['start_date_local'].dt.year == year) & (bike_df['start_date_local'].dt.month == month)
-    filtered = bike_df[mask]
+    mask = (df['start_date_local'].dt.year == year) & (df['start_date_local'].dt.month == month)
+    filtered = df[mask]
 
     agg = (
         filtered.groupby('day')
         .agg(
-            miles=('distance_miles', 'sum'),
-            km=('km', 'sum'),
+            value=(value_col, 'sum'),
             hours=('hours', 'sum'),
             count=('id', 'count'),
         )
@@ -118,23 +118,23 @@ def aggregate_by_month(bike_df, year, month):
     return result
 
 
-def aggregate_by_iso_week(bike_df, iso_year, iso_week):
+def aggregate_by_iso_week(df, iso_year, iso_week, value_col='distance_miles'):
     """
-    Returns a DataFrame with one row per weekday (Mon–Sun) for the given ISO week.
-    Missing days are filled with 0s.
+    Returns a DataFrame with one row per weekday (Mon–Sun) for the given ISO
+    week, summing ``value_col``. Missing days are filled with 0s.
+    Columns: weekday, day_label, value, hours, count.
     """
-    bike_df = bike_df.copy()
-    bike_df['km'] = bike_df['distance'] / 1000.0
-    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+    df = df.copy()
+    df['hours'] = df['moving_time'] / 3600.0
 
     # Compute Monday of the target ISO week
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     sunday = monday + timedelta(days=6)
 
     # Use .dt.date for comparison (start_date_local may be tz-aware)
-    dates = bike_df['start_date_local'].dt.date
+    dates = df['start_date_local'].dt.date
     mask = (dates >= monday) & (dates <= sunday)
-    filtered = bike_df[mask].copy()
+    filtered = df[mask].copy()
 
     # Weekday: 0=Mon, 6=Sun
     filtered['weekday'] = filtered['start_date_local'].dt.weekday
@@ -142,8 +142,7 @@ def aggregate_by_iso_week(bike_df, iso_year, iso_week):
     agg = (
         filtered.groupby('weekday')
         .agg(
-            miles=('distance_miles', 'sum'),
-            km=('km', 'sum'),
+            value=(value_col, 'sum'),
             hours=('hours', 'sum'),
             count=('id', 'count'),
         )
@@ -157,29 +156,27 @@ def aggregate_by_iso_week(bike_df, iso_year, iso_week):
     return result
 
 
-def get_period_stats(bike_df, year, month=None, iso_week=None):
+def get_period_stats(df, year, month=None, iso_week=None, value_col='distance_miles'):
     """
-    Returns scalar summary dict for a period: {miles, km, hours, count}.
+    Returns scalar summary dict for a period: {value, hours, count}.
     Pass month for month-mode, iso_week for week-mode.
     """
-    bike_df = bike_df.copy()
-    bike_df['km'] = bike_df['distance'] / 1000.0
-    bike_df['hours'] = bike_df['moving_time'] / 3600.0
+    df = df.copy()
+    df['hours'] = df['moving_time'] / 3600.0
 
     if iso_week is not None:
         monday = date.fromisocalendar(year, iso_week, 1)
         sunday = monday + timedelta(days=6)
-        dates = bike_df['start_date_local'].dt.date
+        dates = df['start_date_local'].dt.date
         mask = (dates >= monday) & (dates <= sunday)
     elif month is not None:
-        mask = (bike_df['start_date_local'].dt.year == year) & (bike_df['start_date_local'].dt.month == month)
+        mask = (df['start_date_local'].dt.year == year) & (df['start_date_local'].dt.month == month)
     else:
-        mask = bike_df['start_date_local'].dt.year == year
+        mask = df['start_date_local'].dt.year == year
 
-    filtered = bike_df[mask]
+    filtered = df[mask]
     return {
-        'miles': filtered['distance_miles'].sum(),
-        'km': filtered['km'].sum(),
+        'value': filtered[value_col].sum(),
         'hours': filtered['hours'].sum(),
         'count': len(filtered),
     }
@@ -338,9 +335,11 @@ def aggregate_swim_by_year(swim_df):
     return agg
 
 
-def aggregate_swim_by_month(swim_df, year):
+def aggregate_swim_by_month(swim_df, year=None):
     """
-    Returns DataFrame with one row per month (1–12) for the given year.
+    Returns DataFrame with one row per month (1–12) for the given year, or
+    summed across every year when year is None (the all-time monthly
+    pattern — which calendar months Jim actually swims in).
     Columns: month, month_name, swims, meters, yards, hours.
     Missing months filled with 0.
     """
@@ -349,7 +348,7 @@ def aggregate_swim_by_month(swim_df, year):
     swim_df['hours'] = swim_df['moving_time'] / 3600.0
     swim_df['month'] = swim_df['start_date_local'].dt.month
 
-    mask = swim_df['start_date_local'].dt.year == year
+    mask = swim_df['start_date_local'].dt.year == year if year is not None else pd.Series(True, index=swim_df.index)
     agg = (
         swim_df[mask].groupby('month')
         .agg(

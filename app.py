@@ -23,6 +23,7 @@ from src import config, process_data
 from src import charts as _charts_mod
 from src.charts import (
     SKI_BLUE,
+    SKI_BLUE_LIGHT,
     STRAVA_ORANGE,
     SWIM_TEAL,
     SWIM_TEAL_LIGHT,
@@ -276,6 +277,28 @@ def _all_time_line(*, distance, hours, activities, seasons, best_year,
     ])
 
 
+def _chart_header_with_goal(title, current=None, goal=None, unit_label="", color=STRAVA_ORANGE):
+    """Section header row: bold title on the left, a compact 'current / goal
+    (pct%)' readout + thin progress bar on the right — meant to sit directly
+    above the chart it describes, so the goal reads as part of the chart's
+    header rather than a disconnected block below it. Renders just the title
+    when no goal is configured (goal is None or <= 0)."""
+    title_col, goal_col = st.columns([3, 1])
+    with title_col:
+        st.markdown(f"**{title}**")
+    with goal_col:
+        if goal and goal > 0:
+            progress = min((current or 0) / goal, 1.0)
+            st.markdown(
+                f"<div style='text-align:right;font-size:12px;margin-top:4px'>"
+                f"{current:,.0f} / {goal:,.0f} {unit_label} ({progress*100:.0f}%)</div>"
+                f"<div style='background:rgba(150,150,150,0.25);border-radius:4px;height:6px;overflow:hidden'>"
+                f"<div style='width:{progress*100:.1f}%;background:{color};height:100%;margin-left:auto'></div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
 def _render_top_months_table(ranked, value_fmt, title="Top Ten Months by Distance", n=10):
     """Render a ranked table of the top ``n`` months by distance (descending).
 
@@ -396,60 +419,67 @@ def render_year_view(bike_df, dist_col, dist_label):
 # ---------------------------------------------------------------------------
 # Render functions — Month view
 # ---------------------------------------------------------------------------
-def render_month_view(bike_df, dist_col, dist_label):
+def render_month_view(df, dist_label, *, key_prefix='bike', value_col='distance_miles',
+                      unit_mult=1.0, value_label='Distance', count_label='Rides', color=None):
+    """Day-by-day comparison of a calendar month vs. the same month last year
+    (plus the current in-progress month, if different). Sport-agnostic: point
+    value_col at whatever this sport's distance/effort column is."""
     import calendar
     today = date.today()
     current_year, current_month = today.year, today.month
     default_year, default_month = _last_complete_month()
 
-    # Session state initialisation
-    if 'bike_ref_year' not in st.session_state:
-        st.session_state.bike_ref_year = default_year
-    if 'bike_ref_month' not in st.session_state:
-        st.session_state.bike_ref_month = default_month
+    year_key, month_key = f'{key_prefix}_ref_year', f'{key_prefix}_ref_month'
+    if year_key not in st.session_state:
+        st.session_state[year_key] = default_year
+    if month_key not in st.session_state:
+        st.session_state[month_key] = default_month
 
-    ref_year = st.session_state.bike_ref_year
-    ref_month = st.session_state.bike_ref_month
+    ref_year = st.session_state[year_key]
+    ref_month = st.session_state[month_key]
 
     # Navigator row
     nav_l, nav_mid, nav_r = st.columns([1, 3, 1])
     with nav_l:
-        if st.button("◀ Prev", key="month_prev"):
+        if st.button("◀ Prev", key=f"{key_prefix}_month_prev"):
             ref_date = date(ref_year, ref_month, 1) - timedelta(days=1)
-            st.session_state.bike_ref_year = ref_date.year
-            st.session_state.bike_ref_month = ref_date.month
+            st.session_state[year_key] = ref_date.year
+            st.session_state[month_key] = ref_date.month
             st.rerun()
     with nav_mid:
         label = f"{calendar.month_name[ref_month]} {ref_year}"
         st.markdown(f"<h4 style='text-align:center;margin:0'>{label}</h4>", unsafe_allow_html=True)
     with nav_r:
-        if st.button("Next ▶", key="month_next"):
+        if st.button("Next ▶", key=f"{key_prefix}_month_next"):
             ref_date = date(ref_year, ref_month, 28) + timedelta(days=4)
             ref_date = ref_date.replace(day=1)
-            st.session_state.bike_ref_year = ref_date.year
-            st.session_state.bike_ref_month = ref_date.month
+            st.session_state[year_key] = ref_date.year
+            st.session_state[month_key] = ref_date.month
             st.rerun()
 
     # Aggregate data
-    ref_df = process_data.aggregate_by_month(bike_df, ref_year, ref_month)
-    prior_df = process_data.aggregate_by_month(bike_df, ref_year - 1, ref_month)
+    ref_df = process_data.aggregate_by_month(df, ref_year, ref_month, value_col=value_col)
+    prior_df = process_data.aggregate_by_month(df, ref_year - 1, ref_month, value_col=value_col)
+    ref_df['value'] *= unit_mult
+    prior_df['value'] *= unit_mult
 
     # Shadow = current month only if different from ref
     is_current = (ref_year == current_year and ref_month == current_month)
     shadow_df = None
     if not is_current:
-        shadow_df = process_data.aggregate_by_month(bike_df, current_year, current_month)
+        shadow_df = process_data.aggregate_by_month(df, current_year, current_month, value_col=value_col)
+        shadow_df['value'] *= unit_mult
 
     # Stats panels — shown before the chart
-    ref_stats = process_data.get_period_stats(bike_df, ref_year, month=ref_month)
-    prior_stats = process_data.get_period_stats(bike_df, ref_year - 1, month=ref_month)
+    ref_stats = process_data.get_period_stats(df, ref_year, month=ref_month, value_col=value_col)
+    prior_stats = process_data.get_period_stats(df, ref_year - 1, month=ref_month, value_col=value_col)
 
     stat_cols = st.columns(3 if not is_current else 2)
-    _render_stat_block(stat_cols[0], f"{calendar.month_name[ref_month]} {ref_year}", ref_stats, dist_col)
-    _render_stat_block(stat_cols[1], f"{calendar.month_name[ref_month]} {ref_year - 1}", prior_stats, dist_col)
+    _render_stat_block(stat_cols[0], f"{calendar.month_name[ref_month]} {ref_year}", ref_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
+    _render_stat_block(stat_cols[1], f"{calendar.month_name[ref_month]} {ref_year - 1}", prior_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
     if not is_current:
-        shadow_stats = process_data.get_period_stats(bike_df, current_year, month=current_month)
-        _render_stat_block(stat_cols[2], f"{calendar.month_name[current_month]} {current_year} (YTD)", shadow_stats, dist_col)
+        shadow_stats = process_data.get_period_stats(df, current_year, month=current_month, value_col=value_col)
+        _render_stat_block(stat_cols[2], f"{calendar.month_name[current_month]} {current_year} (YTD)", shadow_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
 
     fig = make_period_comparison_chart(
         ref_df=ref_df,
@@ -457,10 +487,11 @@ def render_month_view(bike_df, dist_col, dist_label):
         shadow_df=shadow_df,
         x_col='day',
         x_label='Day of Month',
-        dist_col=dist_col,
+        dist_col='value',
         dist_label=dist_label,
         title=f"{calendar.month_name[ref_month]} {ref_year} vs prior year"
               + ("" if is_current else f" + {calendar.month_name[current_month]} {current_year} (current)"),
+        ref_color=color,
     )
     st.plotly_chart(fig)
 
@@ -468,28 +499,32 @@ def render_month_view(bike_df, dist_col, dist_label):
 # ---------------------------------------------------------------------------
 # Render functions — Week view
 # ---------------------------------------------------------------------------
-def render_week_view(bike_df, dist_col, dist_label):
+def render_week_view(df, dist_label, *, key_prefix='bike', value_col='distance_miles',
+                     unit_mult=1.0, value_label='Distance', count_label='Rides', color=None):
+    """Weekday-by-weekday comparison of an ISO week vs. the same week last
+    year (plus the current in-progress week, if different). Sport-agnostic —
+    see render_month_view."""
     today = date.today()
     current_cal = today.isocalendar()
     current_iso_year, current_iso_week = current_cal[0], current_cal[1]
     default_iso_year, default_iso_week = _last_complete_iso_week()
 
-    # Session state initialisation
-    if 'bike_ref_iso_year' not in st.session_state:
-        st.session_state.bike_ref_iso_year = default_iso_year
-    if 'bike_ref_iso_week' not in st.session_state:
-        st.session_state.bike_ref_iso_week = default_iso_week
+    year_key, week_key = f'{key_prefix}_ref_iso_year', f'{key_prefix}_ref_iso_week'
+    if year_key not in st.session_state:
+        st.session_state[year_key] = default_iso_year
+    if week_key not in st.session_state:
+        st.session_state[week_key] = default_iso_week
 
-    ref_iso_year = st.session_state.bike_ref_iso_year
-    ref_iso_week = st.session_state.bike_ref_iso_week
+    ref_iso_year = st.session_state[year_key]
+    ref_iso_week = st.session_state[week_key]
 
     # Navigator row
     nav_l, nav_mid, nav_r = st.columns([1, 3, 1])
     with nav_l:
-        if st.button("◀ Prev", key="week_prev"):
+        if st.button("◀ Prev", key=f"{key_prefix}_week_prev"):
             y, w = _prev_iso_week(ref_iso_year, ref_iso_week)
-            st.session_state.bike_ref_iso_year = y
-            st.session_state.bike_ref_iso_week = w
+            st.session_state[year_key] = y
+            st.session_state[week_key] = w
             st.rerun()
     with nav_mid:
         st.markdown(
@@ -497,31 +532,34 @@ def render_week_view(bike_df, dist_col, dist_label):
             unsafe_allow_html=True,
         )
     with nav_r:
-        if st.button("Next ▶", key="week_next"):
+        if st.button("Next ▶", key=f"{key_prefix}_week_next"):
             y, w = _next_iso_week(ref_iso_year, ref_iso_week)
-            st.session_state.bike_ref_iso_year = y
-            st.session_state.bike_ref_iso_week = w
+            st.session_state[year_key] = y
+            st.session_state[week_key] = w
             st.rerun()
 
     # Aggregate data
-    ref_df = process_data.aggregate_by_iso_week(bike_df, ref_iso_year, ref_iso_week)
-    prior_df = process_data.aggregate_by_iso_week(bike_df, ref_iso_year - 1, ref_iso_week)
+    ref_df = process_data.aggregate_by_iso_week(df, ref_iso_year, ref_iso_week, value_col=value_col)
+    prior_df = process_data.aggregate_by_iso_week(df, ref_iso_year - 1, ref_iso_week, value_col=value_col)
+    ref_df['value'] *= unit_mult
+    prior_df['value'] *= unit_mult
 
     is_current = (ref_iso_year == current_iso_year and ref_iso_week == current_iso_week)
     shadow_df = None
     if not is_current:
-        shadow_df = process_data.aggregate_by_iso_week(bike_df, current_iso_year, current_iso_week)
+        shadow_df = process_data.aggregate_by_iso_week(df, current_iso_year, current_iso_week, value_col=value_col)
+        shadow_df['value'] *= unit_mult
 
     # Stats panels — shown before the chart
-    ref_stats = process_data.get_period_stats(bike_df, ref_iso_year, iso_week=ref_iso_week)
-    prior_stats = process_data.get_period_stats(bike_df, ref_iso_year - 1, iso_week=ref_iso_week)
+    ref_stats = process_data.get_period_stats(df, ref_iso_year, iso_week=ref_iso_week, value_col=value_col)
+    prior_stats = process_data.get_period_stats(df, ref_iso_year - 1, iso_week=ref_iso_week, value_col=value_col)
 
     stat_cols = st.columns(3 if not is_current else 2)
-    _render_stat_block(stat_cols[0], _week_label(ref_iso_year, ref_iso_week), ref_stats, dist_col)
-    _render_stat_block(stat_cols[1], _week_label(ref_iso_year - 1, ref_iso_week) + " (prior)", prior_stats, dist_col)
+    _render_stat_block(stat_cols[0], _week_label(ref_iso_year, ref_iso_week), ref_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
+    _render_stat_block(stat_cols[1], _week_label(ref_iso_year - 1, ref_iso_week) + " (prior)", prior_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
     if not is_current:
-        shadow_stats = process_data.get_period_stats(bike_df, current_iso_year, iso_week=current_iso_week)
-        _render_stat_block(stat_cols[2], "Current week (in progress)", shadow_stats, dist_col)
+        shadow_stats = process_data.get_period_stats(df, current_iso_year, iso_week=current_iso_week, value_col=value_col)
+        _render_stat_block(stat_cols[2], "Current week (in progress)", shadow_stats, dist_label, unit_mult=unit_mult, value_label=value_label, count_label=count_label)
 
     fig = make_period_comparison_chart(
         ref_df=ref_df,
@@ -529,10 +567,11 @@ def render_week_view(bike_df, dist_col, dist_label):
         shadow_df=shadow_df,
         x_col='day_label',
         x_label='Day',
-        dist_col=dist_col,
+        dist_col='value',
         dist_label=dist_label,
         title=_week_label(ref_iso_year, ref_iso_week)
               + ("" if is_current else f" + current week (in progress)"),
+        ref_color=color,
     )
     st.plotly_chart(fig)
 
@@ -540,13 +579,13 @@ def render_week_view(bike_df, dist_col, dist_label):
 # ---------------------------------------------------------------------------
 # Shared helper
 # ---------------------------------------------------------------------------
-def _render_stat_block(col, label, stats, dist_col):
-    dist_val = f"{stats['miles']:,.1f} mi" if dist_col == 'miles' else f"{stats['km']:,.1f} km"
+def _render_stat_block(col, label, stats, dist_label, *, unit_mult=1.0, value_label='Distance', count_label='Rides'):
+    dist_val = f"{stats['value'] * unit_mult:,.1f} {dist_label}"
     with col:
         st.markdown(f"**{label}**")
-        st.metric("Distance", dist_val)
+        st.metric(value_label, dist_val)
         st.metric("Hours", f"{stats['hours']:,.1f} h")
-        st.metric("Rides", str(int(stats['count'])))
+        st.metric(count_label, str(int(stats['count'])))
 
 
 # ---------------------------------------------------------------------------
@@ -649,20 +688,6 @@ def render_bike_tab(bike_df, gear_map, settings):
         if os.path.exists(_static_map_path):
             st.image(_static_map_path, width="stretch")
 
-    # --- Top bikes by all-time miles (unaffected by the gear filter below) ---
-    if not bike_df.empty:
-        _bike_totals = (
-            bike_df.groupby('gear_id')['distance_miles'].sum()
-            .sort_values(ascending=False)
-            .head(4)
-        )
-        if not _bike_totals.empty:
-            st.markdown("**Top Bikes — All-Time Miles**")
-            _stats_box([
-                (gear_map.get(gid, gid) if gid else "Unknown Bike", f"{_conv(mi):,.0f} {_du}")
-                for gid, mi in _bike_totals.items()
-            ])
-
     # --- Annual distance chart (full width, all bikes) ---
     _yearly_unfiltered = process_data.aggregate_by_year(bike_df)
     if not _yearly_unfiltered.empty:
@@ -680,71 +705,49 @@ def render_bike_tab(bike_df, gear_map, settings):
             ),
         )
 
-    # Placeholder: the Distance-by-Month chart (Year mode) renders here, directly
-    # under the annual chart but above the controls it depends on — filled below.
-    _bike_monthly_ph = st.container()
-
-    # --- Controls row ---
-    ctrl_l, ctrl_r = st.columns(2)
-    with ctrl_l:
-        time_mode = st.radio(
-            "Time mode", ["Year", "Month", "Week"],
-            horizontal=True, key="bike_time_mode",
-        )
-    with ctrl_r:
-        unit = st.radio(
-            "Units", ["Miles", "Km"],
-            horizontal=True, key="bike_unit",
-        )
+    # --- Units control ---
+    unit = st.radio(
+        "Units", ["Miles", "Km"],
+        horizontal=True, key="bike_unit",
+    )
 
     dist_col = 'miles' if unit == 'Miles' else 'km'
     dist_label = 'Miles' if unit == 'Miles' else 'Km'
 
-    # --- Year mode: selector + two stats boxes + monthly chart ---
-    if time_mode == "Year":
-        available_years = sorted(filtered_df['year'].unique().tolist(), reverse=True) if not filtered_df.empty else []
+    # --- Year section: selector + monthly chart + stats box (mirrors the
+    # Snow season section and Swim year section) ---
+    available_years = sorted(filtered_df['year'].unique().tolist(), reverse=True) if not filtered_df.empty else []
 
-        # Seed session state to avoid index=/key= conflict
-        _cur_by = st.session_state.get('bike_year')
-        if _cur_by not in available_years:
-            st.session_state['bike_year'] = available_years[0] if available_years else None
+    # Seed session state to avoid index=/key= conflict
+    _cur_by = st.session_state.get('bike_year')
+    if _cur_by not in available_years:
+        st.session_state['bike_year'] = available_years[0] if available_years else None
 
-        selected_year = st.selectbox("Year", available_years, key="bike_year")
+    selected_year = st.selectbox("Year", available_years, key="bike_year")
 
-        if selected_year is not None and not yearly_all.empty:
-            yr_row = yearly_all[yearly_all['year'] == selected_year]
-            max_ride = filtered_df[filtered_df['year'] == selected_year]['distance_miles'].max() \
-                       if not filtered_df[filtered_df['year'] == selected_year].empty else 0
+    if selected_year is not None and not yearly_all.empty:
+        yr_row = yearly_all[yearly_all['year'] == selected_year]
+        max_ride = filtered_df[filtered_df['year'] == selected_year]['distance_miles'].max() \
+                   if not filtered_df[filtered_df['year'] == selected_year].empty else 0
 
-            if not yr_row.empty:
-                r = yr_row.iloc[0]
-                yr_dist = f"{r['miles']:,.0f} mi" if dist_col == 'miles' else f"{r['km']:,.0f} km"
-                yr_max  = f"{max_ride:,.1f} mi" if dist_col == 'miles' else f"{max_ride * 1.60934:,.1f} km"
-                _stats_box([
-                    (f"{selected_year} Distance", yr_dist),
-                    ("Longest Ride",              yr_max),
-                    ("Hours",                     f"{r['hours']:,.0f} h"),
-                    ("Rides",                     f"{int(r['count']):,}"),
-                ])
+        monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
+        _bike_goal_series = process_data.bike_monthly_goal_series(settings)
+        if dist_col == 'km':
+            _bike_goal_series = [v * 1.60934 for v in _bike_goal_series]
+        st.plotly_chart(
+            make_monthly_chart(monthly_bike, dist_col, dist_label, goal=_bike_goal_series),
+        )
 
-            # Distance by Month chart for selected year, rendered in the
-            # placeholder above the controls.
-            monthly_bike = process_data.aggregate_bike_by_month(filtered_df, selected_year)
-            _bike_goal_series = process_data.bike_monthly_goal_series(settings)
-            if dist_col == 'km':
-                _bike_goal_series = [v * 1.60934 for v in _bike_goal_series]
-            with _bike_monthly_ph:
-                st.plotly_chart(
-                    make_monthly_chart(monthly_bike, dist_col, dist_label, goal=_bike_goal_series),
-                )
-
-    # --- Dispatch to view ---
-    if time_mode == "Year":
-        render_year_view(filtered_df, dist_col, dist_label)
-    elif time_mode == "Month":
-        render_month_view(filtered_df, dist_col, dist_label)
-    elif time_mode == "Week":
-        render_week_view(filtered_df, dist_col, dist_label)
+        if not yr_row.empty:
+            r = yr_row.iloc[0]
+            yr_dist = f"{r['miles']:,.0f} mi" if dist_col == 'miles' else f"{r['km']:,.0f} km"
+            yr_max  = f"{max_ride:,.1f} mi" if dist_col == 'miles' else f"{max_ride * 1.60934:,.1f} km"
+            _stats_box([
+                (f"{selected_year} Distance", yr_dist),
+                ("Longest Ride",              yr_max),
+                ("Hours",                     f"{r['hours']:,.0f} h"),
+                ("Rides",                     f"{int(r['count']):,}"),
+            ])
 
     if unit == 'Miles':
         fmt_bike = lambda r: f"{r['distance_miles']:,.1f} mi"
@@ -780,6 +783,43 @@ def render_bike_tab(bike_df, gear_map, settings):
 
     st.divider()
     render_bike_heatmap_view(compact=False)
+
+    # --- Top bikes by all-time miles (unaffected by the gear filter above) ---
+    st.divider()
+    if not bike_df.empty:
+        _bike_totals = (
+            bike_df.groupby('gear_id')['distance_miles'].sum()
+            .sort_values(ascending=False)
+            .head(4)
+        )
+        if not _bike_totals.empty:
+            st.markdown("**Top Bikes — All-Time Miles**")
+            _stats_box([
+                (gear_map.get(gid, gid) if gid else "Unknown Bike", f"{_conv(mi):,.0f} {_du}")
+                for gid, mi in _bike_totals.items()
+            ])
+
+    # --- Experiments: Year/Month/Week comparison tooling ---
+    st.divider()
+    st.subheader("Experiments")
+    time_mode = st.radio(
+        "Time mode", ["Year", "Month", "Week"],
+        horizontal=True, key="bike_time_mode",
+    )
+    if time_mode == "Year":
+        render_year_view(filtered_df, dist_col, dist_label)
+    elif time_mode == "Month":
+        render_month_view(
+            filtered_df, dist_label, key_prefix='bike', value_col='distance_miles',
+            unit_mult=(1.0 if dist_col == 'miles' else 1.60934),
+            value_label='Distance', count_label='Rides', color=STRAVA_ORANGE,
+        )
+    elif time_mode == "Week":
+        render_week_view(
+            filtered_df, dist_label, key_prefix='bike', value_col='distance_miles',
+            unit_mult=(1.0 if dist_col == 'miles' else 1.60934),
+            value_label='Distance', count_label='Rides', color=STRAVA_ORANGE,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -835,9 +875,16 @@ def render_ski_tab(ski_df, settings):
         if os.path.exists(_img_path):
             st.image(_img_path, width="stretch")
 
-    # --- 1. All-seasons overview chart (full width) ---
+    # --- 1. All-seasons overview chart (full width); header carries the
+    # season-goal readout since the chart already draws the goal as a
+    # dashed line — no need to repeat it as a block further down. ---
+    _current_row = seasonal_df[seasonal_df['season_key'] == current_season_key]
+    _current_vert = _current_row.iloc[0]['vert_ft'] if not _current_row.empty else 0
+    _chart_header_with_goal(
+        "Season Vertical Feet", current=_current_vert, goal=goal_vert, unit_label="ft", color=SKI_BLUE,
+    )
     st.plotly_chart(
-        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220),
+        make_season_vert_chart(seasonal_df, current_season_key, goal_vert=goal_vert, height=220, title=" "),
     )
 
     # --- 2. Season selector (e.g. "2025-2026") ---
@@ -860,7 +907,14 @@ def render_ski_tab(ski_df, settings):
     )
     selected_key = label_to_key[selected_label]
 
-    # --- 3. Stats box ---
+    # --- 3. Vert by Month chart (season months, spanning both calendar years) ---
+    monthly_season = _agg_ski_season_by_month(ski_df, selected_key, ski_start, ski_end)
+    if not monthly_season.empty:
+        st.plotly_chart(
+            make_monthly_chart(monthly_season, 'vert_ft', 'ft', color=SKI_BLUE),
+        )
+
+    # --- 4. Stats box ---
     row = seasonal_df[seasonal_df['season_key'] == selected_key].iloc[0]
     equity_miles = row['vert_ft'] / ski_vert_per_mile if ski_vert_per_mile > 0 else 0
     _stats_box([
@@ -871,22 +925,20 @@ def render_ski_tab(ski_df, settings):
         ("Avg vert / day", f"{row['avg_vert_day']:,.0f} ft"),
         ("Equity miles",   f"{equity_miles:,.0f} mi"),
     ])
-    if goal_vert > 0:
-        progress = min(row['vert_ft'] / goal_vert, 1.0)
-        st.markdown(
-            f"<div style='font-size:13px;margin:6px 0 4px'>"
-            f"Season goal: {row['vert_ft']:,.0f} / {goal_vert:,.0f} ft ({progress*100:.0f}%)</div>"
-            f"<div style='background:#2a2d35;border-radius:4px;height:8px;overflow:hidden'>"
-            f"<div style='width:{progress*100:.1f}%;background:{SKI_BLUE};height:100%'></div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
 
-    # --- 4. Vert by Month chart (season months, spanning both calendar years) ---
-    monthly_season = _agg_ski_season_by_month(ski_df, selected_key, ski_start, ski_end)
+    # --- Top 5 Ski Days (vertical feet) for the selected season ---
+    _season_key_per_row = ski_df['start_date_local'].apply(process_data._ski_season_key)
+    season_df = ski_df[_season_key_per_row == selected_key]
+    _render_longest_table(
+        season_df, 'elevation_feet',
+        lambda r: f"{r['elevation_feet']:,.0f} ft",
+        f"Top 5 Ski Days — {selected_label}", n=5,
+    )
+
+    # --- Second, thin Vert by Month chart for the selected season ---
     if not monthly_season.empty:
         st.plotly_chart(
-            make_monthly_chart(monthly_season, 'vert_ft', 'ft', color=SKI_BLUE),
+            make_monthly_chart(monthly_season, 'vert_ft', 'ft', color=SKI_BLUE_LIGHT, title=" ", height=180),
         )
 
     # --- 4b. Table of contents for the list sections below ---
@@ -940,6 +992,23 @@ def render_ski_tab(ski_df, settings):
         display[['Date', 'Season', 'Activity', 'Type', 'Vert (ft)', 'Dist (mi)', 'Hours']],
         hide_index=True,
     )
+
+    # --- 8. Experiments: Month/Week comparison tooling ---
+    st.divider()
+    st.subheader("Experiments")
+    ski_time_mode = st.radio(
+        "Compare", ["Month", "Week"], horizontal=True, key="ski_time_mode",
+    )
+    if ski_time_mode == "Month":
+        render_month_view(
+            ski_df, 'ft', key_prefix='ski', value_col='elevation_feet',
+            value_label='Vertical', count_label='Sessions', color=SKI_BLUE,
+        )
+    else:
+        render_week_view(
+            ski_df, 'ft', key_prefix='ski', value_col='elevation_feet',
+            value_label='Vertical', count_label='Sessions', color=SKI_BLUE,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1022,19 +1091,29 @@ def render_swim_tab(swim_df, settings, df=None):
             make_swim_year_chart(yearly_plot, current_year, height=220),
         )
 
-    # Placeholders: the Distance-by-Month chart and its goal-pace line render
-    # here — directly under the annual overview — but depend on the Year/Units
-    # selections made just below, so they're filled in last.
-    _monthly_ph = st.container()
-    _pace_ph    = st.container()
+    # --- All-time monthly pattern (which calendar months I actually swim) ---
+    _alltime_monthly_swim = _agg_swim_by_month(swim_df, None)
+    _dc_all = 'meters' if _unit == 'Meters' else 'yards'
+    if _alltime_monthly_swim['swims'].sum() > 0:
+        st.plotly_chart(
+            make_monthly_chart(
+                _alltime_monthly_swim, _dc_all, _dlabel,
+                title=f"All-Time {_dlabel} by Month", color=SWIM_TEAL,
+            ),
+        )
 
     # --- 3. Controls: Year + Units ---
     ctrl_l, ctrl_r = st.columns(2)
     with ctrl_l:
         years = sorted(swim_df['year'].unique().tolist(), reverse=True)
-        selected_year = st.selectbox("Year", years, key="swim_year")
+        year_options = ["All time"] + [str(y) for y in years]
+        selected_year_label = st.selectbox("Year", year_options, key="swim_year")
     with ctrl_r:
         unit = st.radio("Units", ["Meters", "Yards"], horizontal=True, key="swim_unit")
+
+    is_all_time = selected_year_label == "All time"
+    selected_year = None if is_all_time else int(selected_year_label)
+    period_df  = swim_df if is_all_time else swim_df[swim_df['year'] == selected_year]
 
     dist_col   = 'meters' if unit == 'Meters' else 'yards'
     dist_label = 'm' if unit == 'Meters' else 'yd'
@@ -1055,65 +1134,79 @@ def render_swim_tab(swim_df, settings, df=None):
         .drop(columns='_order')
     )
 
-    # --- Distance by Month chart, rendered in its placeholder above the controls ---
-    with _monthly_ph:
-        st.plotly_chart(
-            make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL),
-        )
+    # --- Period stats (used by both the goal header and the stats box) ---
+    total_dist  = period_df['distance'].sum() * mult
+    total_swims = len(period_df)
+    avg_dist    = (total_dist / total_swims) if total_swims else 0
+    months_with_data = int((monthly[dist_col] > 0).sum())
+    avg_monthly = total_dist / months_with_data if months_with_data else 0
+    max_swim    = period_df['distance'].max() * mult if not period_df.empty else 0
 
-    # --- Selected-year stats (below the controls); goal pace (below the chart) ---
-    year_row = yearly[yearly['year'] == selected_year]
-    if not year_row.empty:
-        row = year_row.iloc[0]
-        total_dist = row[dist_col]
-        total_swims = int(row['swims'])
-        avg_dist = row['avg_meters'] * mult
-        months_with_data = int((monthly[dist_col] > 0).sum())
-        avg_monthly = total_dist / months_with_data if months_with_data else 0
-        max_swim = swim_df['distance'].max() * mult if not swim_df.empty else 0
+    # --- Distance by Month chart, header carries the goal-pace readout ---
+    _period_label = "All Time" if is_all_time else str(selected_year)
+    _chart_header_with_goal(
+        f"{_period_label} Distance by Month ({dist_label})",
+        current=avg_monthly, goal=goal_val, unit_label=f"{dist_label} avg", color=SWIM_TEAL,
+    )
+    st.plotly_chart(
+        make_monthly_chart(monthly, dist_col, dist_label, goal=goal_val, color=SWIM_TEAL, title=" "),
+    )
 
-        if goal_val > 0:
-            progress = min(avg_monthly / goal_val, 1.0)
-            with _pace_ph:
-                st.markdown(
-                    f"<div style='font-size:13px;margin:6px 0 4px'>"
-                    f"Monthly goal pace: {avg_monthly:,.0f} / {goal_val:,.0f} {dist_label} avg ({progress*100:.0f}%)</div>"
-                    f"<div style='background:{SWIM_TEAL_LIGHT};border-radius:4px;height:8px;overflow:hidden'>"
-                    f"<div style='width:{progress*100:.1f}%;background:{SWIM_TEAL};height:100%'></div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+    _stats_box([
+        ("Total Distance", f"{total_dist:,.0f} {dist_label}"),
+        ("Swims",          str(total_swims)),
+        ("Longest Swim",   f"{max_swim:,.0f} {dist_label}"),
+        ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
+        ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
+    ])
 
-        _stats_box([
-            ("Total Distance", f"{total_dist:,.0f} {dist_label}"),
-            ("Swims",          str(total_swims)),
-            ("Longest Swim",   f"{max_swim:,.0f} {dist_label}"),
-            ("Avg per Swim",   f"{avg_dist:,.0f} {dist_label}"),
-            ("Avg per Month",  f"{avg_monthly:,.0f} {dist_label}"),
-        ])
+    fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
+
+    # --- Top 5 Swims for the selected period ---
+    _render_longest_table(period_df, 'distance', fmt_swim, f"Top 5 Swims — {_period_label}", n=5)
+
+    # --- Second, thin monthly chart for the selected period ---
+    st.plotly_chart(
+        make_monthly_chart(monthly, dist_col, dist_label, color=SWIM_TEAL_LIGHT, title=" ", height=180),
+    )
 
     # --- 6. Table of contents for the list sections below ---
     _section_toc(
-        [("Most Recent Swims", "most-recent-swims"),
-         ("Longest Swims",     "longest-swims"),
-         ("Top Ten Months",    "top-ten-months-by-distance")],
+        [("Most Recent Swims",       "most-recent-swims"),
+         ("All-time Longest Swims",  "all-time-longest-swims"),
+         ("Top Ten Months",          "top-ten-months-by-distance")],
         SWIM_TEAL,
     )
-
-    fmt_swim = (lambda r: f"{r['distance']:,.0f} m") if unit == 'Meters' else (lambda r: f"{r['distance'] * 1.09361:,.0f} yd")
 
     # --- 7. Most Recent Swims ---
     st.divider()
     _render_recent_table(swim_df, fmt_swim, "Most Recent Swims", key_prefix="swim", widget="number")
 
-    # --- 8. Longest Swims ---
+    # --- 8. All-time Longest Swims ---
     st.divider()
-    _render_longest_table(swim_df, 'distance', fmt_swim, "Longest Swims")
+    _render_longest_table(swim_df, 'distance', fmt_swim, "All-time Longest Swims")
 
     # --- 9. Top Ten Months by distance ---
     st.divider()
     _swim_month_fmt = (lambda v: f"{v:,.0f} m") if unit == 'Meters' else (lambda v: f"{v * 1.09361:,.0f} yd")
     _render_top_months_table(swim_months_ranked, _swim_month_fmt)
+
+    # --- 10. Experiments: Month/Week comparison tooling ---
+    st.divider()
+    st.subheader("Experiments")
+    swim_time_mode = st.radio(
+        "Compare", ["Month", "Week"], horizontal=True, key="swim_time_mode",
+    )
+    if swim_time_mode == "Month":
+        render_month_view(
+            swim_df, dist_label, key_prefix='swim', value_col='distance',
+            unit_mult=mult, value_label='Distance', count_label='Swims', color=SWIM_TEAL,
+        )
+    else:
+        render_week_view(
+            swim_df, dist_label, key_prefix='swim', value_col='distance',
+            unit_mult=mult, value_label='Distance', count_label='Swims', color=SWIM_TEAL,
+        )
 
 
 

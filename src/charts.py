@@ -179,10 +179,11 @@ def make_year_time_chart(yearly_df, current_year, height=220):
 def make_period_comparison_chart(
     ref_df, prior_df, shadow_df,
     x_col, x_label, dist_col, dist_label, title,
+    ref_color=None,
 ):
     """
     Overlay bar chart comparing up to three periods.
-    - ref_df   : reference period (solid Strava orange)
+    - ref_df   : reference period (solid `ref_color`, defaults to Strava orange)
     - prior_df : same period prior year (blue, 50% opacity)
     - shadow_df: current in-progress period (gray, 25% opacity); None to omit
 
@@ -212,7 +213,7 @@ def make_period_comparison_chart(
             x=ref_df[x_col],
             y=ref_df[dist_col],
             name='Selected period',
-            marker_color=STRAVA_ORANGE,
+            marker_color=ref_color or STRAVA_ORANGE,
         ))
 
     fig.update_layout(**_base_layout(
@@ -226,12 +227,14 @@ def make_period_comparison_chart(
     return fig
 
 
-def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None, title=None):
+def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None, title=None, height=280):
     """Bar chart of distance by month — 12 bars, 0-filled for empty months.
     Optional dashed goal line. `goal` may be a scalar (one horizontal line) or
     a sequence of 12 values for a per-month stepped goal. `color` overrides
     the bar color (defaults to Strava orange). `title` overrides the default
-    "Distance by Month (<unit>)" heading."""
+    "Distance by Month (<unit>)" heading — pass a single space to suppress it
+    when the title is being shown elsewhere (e.g. a header row above the
+    chart). `height` (px) for a thin/compact variant."""
     bar_color = color or STRAVA_ORANGE
     fig = go.Figure(go.Bar(
         x=monthly_df['month_name'],
@@ -268,7 +271,7 @@ def make_monthly_chart(monthly_df, dist_col, dist_label, goal=None, color=None, 
         xaxis_title="Month",
         yaxis_title=dist_label,
         showlegend=False,
-        height=280,
+        height=height,
     ))
     fig.update_yaxes(gridcolor=_grid_color())
     return fig
@@ -384,11 +387,13 @@ def make_swim_year_chart(yearly_df, current_year, annual_goal=None, height=None)
 SKI_BLUE_LIGHT = '#93C5FD'
 
 
-def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, height=None):
+def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, height=None, title=None):
     """
     Bar chart of total vertical feet by ski season.
     Current/in-progress season shown in lighter blue; past seasons in solid blue.
     Optional dashed goal line. Pass height (px) for a thin/compact variant.
+    `title` overrides the default "Season Vertical Feet" heading — pass a
+    single space to suppress it when shown elsewhere (e.g. a header row).
     """
     colors = [
         SKI_BLUE_LIGHT if int(row['season_key']) >= current_season_key else SKI_BLUE
@@ -445,7 +450,7 @@ def make_season_vert_chart(seasonal_df, current_season_key, goal_vert=None, heig
         )
 
     layout = _base_layout(
-        title="Season Vertical Feet",
+        title=title or "Season Vertical Feet",
         xaxis_title="Season",
         yaxis_title="Vertical Feet",
         showlegend=False,
