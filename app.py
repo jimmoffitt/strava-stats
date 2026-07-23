@@ -3045,6 +3045,27 @@ with st.sidebar:
             z-index: 999;
             background-color: {_sidebar_bg};
         }}
+        /* Page-link labels default to a single non-wrapping line (e.g. "Sport
+           types and equity"), which forces the sidebar to stay wide on a
+           phone to avoid clipping it. Let labels wrap to a second line
+           instead, so the sidebar can be narrowed without losing text. */
+        [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] {{
+            height: auto !important;
+            min-height: 32px;
+            padding-top: 6px !important;
+            padding-bottom: 6px !important;
+        }}
+        [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] > span:last-child {{
+            height: auto !important;
+            overflow: visible !important;
+            white-space: normal !important;
+        }}
+        [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] p {{
+            white-space: normal !important;
+            word-break: break-word;
+            height: auto !important;
+            line-height: 1.25;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -3069,5 +3090,35 @@ with st.sidebar:
     st.markdown("**Tools**")
     for _p in _tools_pages:
         st.page_link(_p)
+
+    # Selecting a page link on mobile leaves the sidebar covering the whole
+    # screen with no obvious next step. Auto-collapse it after navigation,
+    # matching typical mobile nav-drawer behavior; desktop is left alone
+    # since the sidebar coexists with the content there.
+    _components.html(
+        """
+        <script>
+        (function() {
+            if (window.parent.__eqmSidebarAutoCloseAttached) return;
+            window.parent.__eqmSidebarAutoCloseAttached = true;
+            window.parent.document.addEventListener('click', function(e) {
+                var link = e.target.closest('[data-testid="stPageLink-NavLink"]');
+                if (!link) return;
+                if (window.parent.innerWidth > 768) return;
+                setTimeout(function() {
+                    var doc = window.parent.document;
+                    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
+                    var btn = doc.querySelector('[data-testid="stSidebarCollapseButton"] button');
+                    if (btn && sidebar && sidebar.getAttribute('aria-expanded') === 'true') {
+                        btn.click();
+                    }
+                }, 150);
+            }, true);
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
 
 pg.run()
