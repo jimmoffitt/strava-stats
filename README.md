@@ -1,12 +1,18 @@
-# Strava Stats
+# Equity Miles
 
-A personal Strava dashboard that goes deeper than the official app. Built because the annual "Wrapped" summary doesn't answer the questions I actually care about: How does this year compare to last? Am I riding more or less than 2021? How do ski and swim effort stack up against bike miles?
+*A personal Strava dashboard for people who ride, ski, swim, run, and hike — and want one overall measurement for how their year is actually going.*
 
-A sidebar-driven Streamlit app: **View** pages for Bike, Snow, Swim, Combined (cross-sport equity), and a Wrapped-style summary; **Tools** for full-text activity search and data export; and a **Settings** area split into five focused sub-pages. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
+I bike. A lot. So most of my own sense of "how's this year going" naturally comes out in miles. But a week of skiing or swimming doesn't produce a mileage number that means anything next to a bike ride — and Strava's own "Wrapped" doesn't try to answer that. This app's whole reason for existing is one idea: **equity miles**, a common unit that converts every sport's effort into the currency of whichever sport you actually care about, so "was this a better year than last year?" has a real answer no matter which sports made up your training.
+
+Everything else — the sport tabs, the year-over-year comparisons, the "Wrapped"-style summary — is really just a shell around that one number.
+
+A sidebar-driven Streamlit app: **View** pages for Bike, Snow, Swim, Running, and Hiking (pick which ones show up in Settings), a Combined cross-sport equity view, and a Wrapped-style summary; **Tools** for full-text activity search and data export; and a **Settings** area split into five focused sub-pages. Data syncs directly from the Strava API and is stored locally — nothing leaves your machine.
 
 **🚀 Live demo: [strava-stats-1.streamlit.app](https://strava-stats-1.streamlit.app/)** — a read-only build with a sanitized copy of the real dataset (see [How the demo works](#how-the-demo-works)). Works nicely on a phone too: open it in Safari and use Share → *Add to Home Screen*.
 
-![Strava Stats dashboard — Snow tab](docs/screenshots/snow_tab.png)
+> **Not affiliated with, endorsed by, or sponsored by Strava.** This is an independent, unofficial project built against Strava's public API. "Strava" and the Strava logo are trademarks of Strava, Inc.
+
+![Equity Miles dashboard — Snow tab](docs/screenshots/snow_tab.png)
 
 ---
 
@@ -74,7 +80,7 @@ Activities with equity markers in their name (`SEq`, `HEq`, `GEq`, etc.) are man
 
 ## Developer documentation
 
-This repository contains the code and content needed to deploy your own Strava Stats app. This app was built as a Streamlit service.
+This repository contains the code and content needed to deploy your own Equity Miles app. This app was built as a Streamlit service.
 
 ### Quick start
 

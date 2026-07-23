@@ -1,7 +1,7 @@
 """
 app.py — Streamlit dashboard entry point.
 
-Renders the multi-tab Strava Stats UI: Bike, Snow, Swim, Combined (equity),
+Renders the multi-tab Equity Miles UI: Bike, Snow, Swim, Combined (equity),
 Wrapped, Explore, Export, and Settings. Each tab has a dedicated render_*
 function that pulls pre-processed DataFrames from process_data, passes them
 to Plotly figure factories in charts.py, and displays the results with
@@ -51,7 +51,7 @@ from src.config import BIKE_TYPES, GEAR_FALLBACKS, HIKE_TYPES, RUN_TYPES, SKI_TY
 # ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
 # ---------------------------------------------------------------------------
-st.set_page_config(layout="wide", page_title="Strava Stats")
+st.set_page_config(layout="wide", page_title="Equity Miles")
 
 
 # ---------------------------------------------------------------------------
@@ -3015,32 +3015,48 @@ pg = st.navigation(
 )
 
 with st.sidebar:
-    _charts_mod.set_theme(st.context.theme.type == 'dark')
+    _sidebar_dark = st.context.theme.type == 'dark'
+    _charts_mod.set_theme(_sidebar_dark)
+    _sidebar_bg = '#262730' if _sidebar_dark else '#f0f2f6'
     # Streamlit's native sidebar open/close buttons default to a ~28px hit
     # target — fiddly to tap precisely on a phone. Enlarge both toward the
     # ~44px mobile touch-target guideline; purely cosmetic/hit-area, no
-    # behavior change.
+    # behavior change. The header (holding the close button) also isn't
+    # sticky by default — on a phone, scrolling down through View/Data
+    # Sync/Settings/Tools pushes the close button off the top of the screen
+    # entirely, with no way to close the sidebar without scrolling back up
+    # first. Pin it to the top of the sidebar's own scroll area instead.
     st.markdown(
-        """
+        f"""
         <style>
         [data-testid="stSidebarCollapseButton"] button,
-        [data-testid="stExpandSidebarButton"] {
+        [data-testid="stExpandSidebarButton"] {{
             width: 44px !important;
             height: 44px !important;
             padding: 8px !important;
-        }
+        }}
         [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
-        [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {
+        [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {{
             font-size: 28px !important;
-        }
+        }}
+        [data-testid="stSidebarHeader"] {{
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background-color: {_sidebar_bg};
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<h2 style='margin:0 0 0.5rem 0;color:#FC4C02'>Strava Stats</h2>",
+        "<h2 style='margin:0 0 0.2rem 0;color:#FC4C02'>Equity Miles</h2>"
+        "<a href='https://github.com/jimmoffitt/strava-stats' target='_blank' "
+        "style='font-size:13px;text-decoration:none;color:inherit;opacity:0.75'>"
+        "&#128279; View source on GitHub</a>",
         unsafe_allow_html=True,
     )
+    st.markdown("<div style='margin-top:0.75rem'></div>", unsafe_allow_html=True)
     st.markdown("**View**")
     for _p in _view_pages:
         st.page_link(_p)
