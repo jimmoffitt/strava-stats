@@ -1282,7 +1282,7 @@ def aggregate_recent_months_by_sport(df, sport, n_months):
 def get_eq_activities(df, settings=None):
     """
     Returns all equity-declaration activities, sorted by date descending.
-    Columns: date, name, final_type, eq_prefix, miles, year, month, counts —
+    Columns: id, date, name, final_type, eq_prefix, miles, year, month, counts —
     where ``counts`` marks the declarations that contribute custom equity under
     the configured de-dup policy (see reconcile_equity_declarations).
     """
@@ -1295,7 +1295,7 @@ def get_eq_activities(df, settings=None):
     eq_df['date']  = eq_df['start_date_local'].dt.date
     eq_df['month'] = eq_df['start_date_local'].dt.month
     return (
-        eq_df[['date', 'name', 'final_type', 'eq_prefix', 'distance_miles',
+        eq_df[['id', 'date', 'name', 'final_type', 'eq_prefix', 'distance_miles',
                'year', 'month', 'eq_counts']]
         .rename(columns={'distance_miles': 'miles', 'eq_counts': 'counts'})
         .sort_values('date', ascending=False)

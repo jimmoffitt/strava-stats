@@ -1490,9 +1490,11 @@ def render_equity_tab(df, settings):
     display['Activity'] = display['name']
     display['Type']     = display['eq_prefix']
     display['Miles']    = display['miles'].apply(lambda v: f"{v:,.1f}")
+    display = _add_strava_url(display).rename(columns={'strava_url': 'View on Strava'})
     st.dataframe(
-        display[['Date', 'Activity', 'Type', 'Miles']],
+        display[['Date', 'Activity', 'Type', 'Miles', 'View on Strava']],
         hide_index=True,
+        column_config=_STRAVA_URL_COL_CONFIG,
     )
 
 
@@ -1616,14 +1618,29 @@ def _filter_by_sport(df, sport_key):
 # Longest activities table (shared across Bike, Swim, Ski, Wrapped tabs)
 # ---------------------------------------------------------------------------
 
-# Edit this list to add, remove, or reorder columns in the longest activities table.
+# Edit this list to add, remove, or reorder columns in the longest activities
+# table. "View on Strava" stays last so it renders as the rightmost column.
 _LONGEST_COLS = [
     ('Date',     'date_str'),
     ('Activity', 'name'),
     ('Type',     'final_type'),
     ('Distance', 'dist_display'),
     ('Duration', 'duration_str'),
+    ('View on Strava', 'strava_url'),
 ]
+
+_STRAVA_URL_COL_CONFIG = {
+    "View on Strava": st.column_config.LinkColumn(display_text="View on Strava"),
+}
+
+
+def _add_strava_url(df):
+    """Add a strava_url column (https://www.strava.com/activities/<id>) for
+    an activity-link table column. Per Strava's brand guidelines, activity
+    data shown in a third-party app should link back to the original."""
+    df = df.copy()
+    df['strava_url'] = 'https://www.strava.com/activities/' + df['id'].astype(str)
+    return df
 
 
 def _render_recent_table(df, fmt_dist, title="Most Recent Activities",
@@ -1651,9 +1668,11 @@ def _render_recent_table(df, fmt_dist, title="Most Recent Activities",
     recent['date_str']     = pd.to_datetime(recent['start_date_local']).apply(_fmt_date)
     recent['dist_display'] = recent.apply(fmt_dist, axis=1)
     recent['duration_str'] = recent['moving_time'].apply(_fmt_time)
+    recent = _add_strava_url(recent)
     src_cols = [src for _, src in _LONGEST_COLS]
     hdr_map  = {src: hdr for hdr, src in _LONGEST_COLS}
-    st.dataframe(recent[src_cols].rename(columns=hdr_map), width="stretch", hide_index=True)
+    st.dataframe(recent[src_cols].rename(columns=hdr_map), width="stretch", hide_index=True,
+                column_config=_STRAVA_URL_COL_CONFIG)
 
 
 def _render_longest_table(df, sort_col, fmt_dist, title="Longest Activities", n=20):
@@ -1674,9 +1693,11 @@ def _render_longest_table(df, sort_col, fmt_dist, title="Longest Activities", n=
     top['date_str']     = pd.to_datetime(top['start_date_local']).apply(_fmt_date)
     top['dist_display'] = top.apply(fmt_dist, axis=1)
     top['duration_str'] = top['moving_time'].apply(_fmt_time)
+    top = _add_strava_url(top)
     src_cols = [src for _, src in _LONGEST_COLS]
     hdr_map  = {src: hdr for hdr, src in _LONGEST_COLS}
-    st.dataframe(top[src_cols].rename(columns=hdr_map), width="stretch", hide_index=True)
+    st.dataframe(top[src_cols].rename(columns=hdr_map), width="stretch", hide_index=True,
+                column_config=_STRAVA_URL_COL_CONFIG)
 
 
 # ---------------------------------------------------------------------------
@@ -2062,13 +2083,15 @@ def render_explore_tab(df, gear_map):
     display['Gear']      = display['gear_id'].apply(
         lambda g: gear_map.get(g, g) if g else "—"
     )
+    display = _add_strava_url(display)
 
-    show_cols  = ['Date', 'name', 'final_type', 'Distance', 'Duration', 'Elevation', 'Gear']
-    rename_map = {'name': 'Activity', 'final_type': 'Type'}
+    show_cols  = ['Date', 'name', 'final_type', 'Distance', 'Duration', 'Elevation', 'Gear', 'strava_url']
+    rename_map = {'name': 'Activity', 'final_type': 'Type', 'strava_url': 'View on Strava'}
 
     st.dataframe(
         display[show_cols].rename(columns=rename_map),
         hide_index=True,
+        column_config=_STRAVA_URL_COL_CONFIG,
     )
 
     st.download_button(
@@ -2180,8 +2203,9 @@ def render_export_tab(df, settings):
         'distance_miles': 'Miles', 'moving_time': 'Moving Time (s)',
         'elevation_feet': 'Elevation (ft)',
     }
-    act_df = filtered[list(act_cols)].rename(columns=act_cols).copy()
+    act_df = filtered[['id'] + list(act_cols)].rename(columns=act_cols).copy()
     act_df['Date'] = pd.to_datetime(act_df['Date']).apply(_fmt_date)
+    act_df = _add_strava_url(act_df).drop(columns='id').rename(columns={'strava_url': 'View on Strava'})
 
     sport_df = (
         stats['sport_breakdown'][['final_type', 'activities', 'miles', 'hours', 'vert_ft']]
@@ -2193,12 +2217,13 @@ def render_export_tab(df, settings):
         filtered.sort_values(
             ['distance_miles', 'start_date_local'], ascending=[False, False],
         ).head(20)
-        [['start_date_local', 'name', 'final_type', 'distance_miles', 'moving_time']]
+        [['id', 'start_date_local', 'name', 'final_type', 'distance_miles', 'moving_time']]
         .rename(columns={'start_date_local': 'Date', 'name': 'Activity', 'final_type': 'Type',
                          'distance_miles': 'Miles', 'moving_time': 'Moving Time (s)'})
         .copy()
     )
     longest_df['Date'] = pd.to_datetime(longest_df['Date']).apply(_fmt_date)
+    longest_df = _add_strava_url(longest_df).drop(columns='id').rename(columns={'strava_url': 'View on Strava'})
 
     tables = {
         'activities':         (act_df,     f"All {len(act_df):,} activities in selected period"),
@@ -2209,7 +2234,8 @@ def render_export_tab(df, settings):
     st.subheader("Data Tables")
     for fname, (tdf, caption) in tables.items():
         st.caption(caption)
-        st.dataframe(tdf.head(10), width="stretch", hide_index=True)
+        col_config = _STRAVA_URL_COL_CONFIG if 'View on Strava' in tdf.columns else None
+        st.dataframe(tdf.head(10), width="stretch", hide_index=True, column_config=col_config)
         st.download_button(
             f"Download {fname}.csv", _to_csv(tdf), f"{fname}.csv", "text/csv",
             key=f"dl_csv_{fname}",
