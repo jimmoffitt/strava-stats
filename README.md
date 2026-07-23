@@ -238,6 +238,10 @@ Created automatically with defaults on first run. Edit via the Settings tab or d
 
 ---
 
+## License
+
+[MIT](LICENSE) — do what you like with it.
+
 ## Acknowledgments
 
 This prototype was developed using a variety of AI tools. Early designs were made with both ChatGPT and Gemini. To explore Claude Code, that project content was used to kick off a fresh effort using Claude Code. That experiment led to this repository. 
