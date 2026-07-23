@@ -688,9 +688,9 @@ def render_bike_tab(bike_df, gear_map, settings):
                 avg_speed=f"{_conv(_tot) / _hrs:,.1f} {_du}/h" if _hrs else "—",
             )
     with _thumb_col:
-        _static_map_path = os.path.join(config.IMAGES_DIR, 'bike_heat_map_all_time.png')
-        if os.path.exists(_static_map_path):
-            st.image(_static_map_path, width="stretch")
+        _bike_img_path = (settings.get('images', {}) or {}).get('bike_path') or config.BIKE_DEFAULT_IMAGE
+        if os.path.exists(_bike_img_path):
+            st.image(_bike_img_path, width="stretch")
 
     # --- Annual distance chart (full width, all bikes) ---
     _yearly_unfiltered = process_data.aggregate_by_year(bike_df)
@@ -2534,6 +2534,17 @@ def render_settings_section(settings, section):
             tab_hike = st.checkbox("Hiking", value=saved_tabs.get('hike', False), key="settings_tab_hike")
 
         st.divider()
+        st.subheader("Why Equity Miles?")
+        st.caption(
+            "My primary sport is biking, so a lot of my own effort naturally gets "
+            "measured in miles — but a week of skiing or swimming doesn't produce a "
+            "mileage number that means anything next to a bike ride. Equity miles convert "
+            "every sport's effort into one common unit (your reference sport below), so "
+            "questions like \"was this a better year than last year?\" have a real answer "
+            "even when the mix of sports you did changed."
+        )
+
+        st.divider()
         st.subheader("Reference Sport")
         st.caption(
             "Equity miles are expressed in units of this sport. "
@@ -2815,7 +2826,23 @@ def render_settings_section(settings, section):
 
         st.divider()
         st.subheader("Sport tab images")
-        _img_col_snow, _img_col_swim = st.columns(2)
+        st.caption(
+            "Each sport tab shows a default image beside its all-time stats — a bundled "
+            "photo for Snow and Swim, or the auto-generated route heatmap for Bike. Set a "
+            "path here to override any of them with your own image."
+        )
+        _img_col_bike, _img_col_snow, _img_col_swim = st.columns(3)
+        with _img_col_bike:
+            bike_path = st.text_input(
+                "Bike image path (blank = route heatmap)",
+                key="settings_bike_image_path", value=saved_images.get('bike_path') or '',
+                placeholder=config.BIKE_DEFAULT_IMAGE,
+            )
+            _bike_preview = bike_path or config.BIKE_DEFAULT_IMAGE
+            if os.path.exists(_bike_preview):
+                st.image(_bike_preview, width=180)
+            else:
+                st.caption(f"⚠ File not found: {_bike_preview}")
         with _img_col_snow:
             snow_path = st.text_input(
                 "Snow image path (blank = default)",
@@ -2844,6 +2871,7 @@ def render_settings_section(settings, section):
             _save(
                 theme=theme,
                 images={
+                    'bike_path': (bike_path or '').strip() or None,
                     'snow_path': (snow_path or '').strip() or None,
                     'swim_path': (swim_path or '').strip() or None,
                 },
@@ -2948,7 +2976,7 @@ _tools_pages = [
 # Settings expands into one page per section, listed independently in the
 # sidebar (iconless, to match the View/Tools sports' visual grouping).
 _settings_pages = [
-    _page(_p_set_sports,  "Sport equity", None, "settings-sport"),
+    _page(_p_set_sports,  "Sport types and equity", None, "settings-sport"),
     _page(_p_set_goals,   "Goals",        None, "settings-goals"),
     _page(_p_set_seasons, "Seasons",      None, "settings-seasons"),
     _page(_p_set_map,     "Map",          None, "settings-map"),
@@ -2962,6 +2990,27 @@ pg = st.navigation(
 
 with st.sidebar:
     _charts_mod.set_theme(st.context.theme.type == 'dark')
+    # Streamlit's native sidebar open/close buttons default to a ~28px hit
+    # target — fiddly to tap precisely on a phone. Enlarge both toward the
+    # ~44px mobile touch-target guideline; purely cosmetic/hit-area, no
+    # behavior change.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="stExpandSidebarButton"] {
+            width: 44px !important;
+            height: 44px !important;
+            padding: 8px !important;
+        }
+        [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"],
+        [data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {
+            font-size: 28px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.markdown(
         "<h2 style='margin:0 0 0.5rem 0;color:#FC4C02'>Strava Stats</h2>",
         unsafe_allow_html=True,
