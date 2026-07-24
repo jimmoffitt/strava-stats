@@ -14,8 +14,12 @@ import requests
 import os
 from datetime import datetime
 
-# --- Authentication (Unchanged) ---
+# --- Authentication ---
 def get_access_token(token_file, client_id, client_secret):
+    """Return a valid access token, refreshing it first if it's within 5
+    minutes of expiring. Requires token_file to already exist — this app has
+    no in-browser OAuth flow, so the first token pair must be created out of
+    band (see src/setup_tokens.py) before anything here can run."""
     if not os.path.exists(token_file):
         raise FileNotFoundError(f"ERROR: '{token_file}' not found. Please authenticate manually first.")
 
@@ -41,6 +45,10 @@ def get_access_token(token_file, client_id, client_secret):
     return tokens['access_token']
 
 def fetch_active_gear(access_token):
+    """Fetch the athlete's bikes and shoes and return one flat {gear_id: name}
+    map covering both. Merged with config.GEAR_FALLBACKS by the caller so
+    retired gear (no longer returned by this endpoint but still referenced by
+    old activities) still resolves to a name."""
     url = "https://www.strava.com/api/v3/athlete"
     response = requests.get(url, headers={'Authorization': f"Bearer {access_token}"})
     if response.status_code != 200: return {}
@@ -119,7 +127,10 @@ def maintain_archive(access_token, archive_file, target_years):
             print(f"   [OK] {year} data exists in archive. Skipping.")
             continue
             
-        # CASE B: Data missing for ANY year (Past or Current)
+        # CASE B: Data missing for ANY year (Past or Current). Note this also
+        # covers the *first* sync of the current year — it downloads the
+        # whole year up front, and only subsequent runs fall through to the
+        # incremental CASE C below.
         if year not in present_years:
             print(f"   [MISSING] {year} data not found. Downloading full year...")
             new_data = _fetch_year(access_token, year)
@@ -177,12 +188,17 @@ def maintain_archive(access_token, archive_file, target_years):
     return filtered_data
 
 def _fetch_year(access_token, year):
+    """Fetch every activity in the given calendar year."""
     dt_start = datetime(year, 1, 1)
     # End of year is Start of next year
-    dt_end = datetime(year + 1, 1, 1) 
+    dt_end = datetime(year + 1, 1, 1)
     return _fetch_pages(access_token, dt_start.timestamp(), dt_end.timestamp())
 
 def _fetch_pages(access_token, after_ts, before_ts):
+    """Page through GET /athlete/activities for [after_ts, before_ts), 200
+    per page (Strava's max) until a page comes back empty. Note this always
+    issues one extra request past the last page of real data to confirm
+    there's nothing left."""
     activities = []
     page = 1
     while True:

@@ -71,7 +71,7 @@ SETTINGS_FILE      = os.path.join(DATA_DIR, 'settings.json')
 ATHLETE_PROFILE_FILE = os.path.join(DATA_DIR, 'athlete_profile.json')
 ATHLETE_STATS_FILE   = os.path.join(DATA_DIR, 'athlete_stats.json')
 
-# 5b. Demo mode — read-only deploy backed by the sanitized dataset that
+# 6. Demo mode — read-only deploy backed by the sanitized dataset that
 # make_demo_data.py writes to data/demo/ (the only activity data tracked in
 # git; the real archive is gitignored). Enabled explicitly via
 # STRAVA_STATS_DEMO=1, or implicitly on a fresh clone where the real archive

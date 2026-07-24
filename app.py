@@ -102,6 +102,8 @@ def load_activities():
 
 @st.cache_data
 def load_athlete_profile():
+    """Load athlete_profile.json (id, name, follower counts) written by
+    run_pipeline.py / the Sync Now button — empty dict if never synced."""
     if os.path.exists(config.ATHLETE_PROFILE_FILE):
         with open(config.ATHLETE_PROFILE_FILE) as f:
             return json.load(f)
@@ -110,6 +112,8 @@ def load_athlete_profile():
 
 @st.cache_data
 def load_athlete_stats():
+    """Load athlete_stats.json (Strava's own all-time/YTD/recent totals from
+    /athletes/{id}/stats) — empty dict if never synced."""
     if os.path.exists(config.ATHLETE_STATS_FILE):
         with open(config.ATHLETE_STATS_FILE) as f:
             return json.load(f)
@@ -147,7 +151,11 @@ def load_gear_map():
 
 
 def _decode_polyline(s: str) -> list:
-    """Decode a Google Maps encoded polyline string to a list of (lat, lon) pairs."""
+    """Decode a Google Maps encoded polyline string to a list of (lat, lon)
+    pairs. Duplicated (not shared) in publish_data.py's own _decode_polyline
+    — that's a src/ module used standalone by the run_pipeline.py CLI, so it
+    can't import from this top-level app.py without a circular/backwards
+    dependency (and would drag in Streamlit as an unwanted CLI dependency)."""
     coords, idx, lat, lng = [], 0, 0, 0
     while idx < len(s):
         for is_lat in (True, False):
@@ -218,7 +226,7 @@ _agg_ski_by_season       = process_data.aggregate_ski_by_season
 _agg_ski_season_by_month = process_data.aggregate_ski_season_by_month
 
 # ---------------------------------------------------------------------------
-# ISO-week navigation helpers
+# Shared render/formatting helpers, used across multiple tabs
 # ---------------------------------------------------------------------------
 def _fmt_date(dt):
     """Format a date or Timestamp as M/D/YYYY without leading zeros (cross-platform)."""
@@ -363,6 +371,7 @@ def _apply_theme_js(theme: str) -> None:
     _components.html(js, height=0, scrolling=False)
 
 
+# --- ISO-week navigation helpers (used by render_week_view's prev/next arrows) ---
 def _prev_iso_week(iso_year, iso_week):
     monday = date.fromisocalendar(iso_year, iso_week, 1)
     prev_monday = monday - timedelta(weeks=1)
@@ -408,6 +417,11 @@ def _last_complete_iso_week():
 # Render functions — Year view
 # ---------------------------------------------------------------------------
 def render_year_view(bike_df, dist_col, dist_label):
+    """Bike tab only: the annual *hours* chart. Despite the generic name this
+    renders one specific chart, not a general year-view — annual *distance*
+    is already shown by the thin overview chart above it in render_bike_tab,
+    so this just adds the other dimension (dist_col/dist_label are accepted
+    but currently unused)."""
     current_year = date.today().year
     yearly = process_data.aggregate_by_year(bike_df)
     if yearly.empty:
@@ -639,6 +653,14 @@ def render_bike_heatmap_view(compact: bool = False):
 
 
 def render_bike_tab(bike_df, gear_map, settings):
+    """Bike tab, top to bottom: all-time stats + route-heatmap thumbnail,
+    annual distance chart, all-time monthly pattern, a year section (selector
+    + monthly chart with goal line + 4-stat box), Most Recent/Longest/Top
+    Months tables, a by-bike gear filter, the full-size route heatmap,
+    all-time miles per bike, and an Experiments section (Year/Month/Week
+    comparison views). Bike/Snow/Swim each follow this same shape; Running
+    and Hiking use the generalized render_activity_tab version of it instead
+    of duplicating this function."""
     current_year = date.today().year
     _unit = st.session_state.get('bike_unit', 'Miles')
     _is_mi = _unit == 'Miles'
@@ -699,7 +721,7 @@ def render_bike_tab(bike_df, gear_map, settings):
             make_year_dist_chart(_yearly_unfiltered, _dc, _dl, current_year, height=220),
         )
 
-    # --- All-time monthly pattern (which calendar months I actually ride) ---
+    # --- All-time monthly pattern (which calendar months you actually ride) ---
     _alltime_monthly_bike = process_data.aggregate_bike_by_month(filtered_df)
     if _alltime_monthly_bike['count'].sum() > 0:
         st.plotly_chart(
@@ -830,6 +852,11 @@ def render_bike_tab(bike_df, gear_map, settings):
 # Ski tab
 # ---------------------------------------------------------------------------
 def render_ski_tab(ski_df, settings):
+    """Snow tab. Mirrors render_bike_tab's overall shape, but "distance" is
+    vertical feet and the period unit is a ski *season* (e.g. "2025-2026",
+    keyed by its start year — Oct-Dec belongs to that year, Jan-Sep to the
+    following one, see process_data._ski_season_key) rather than a calendar
+    year. Numbered comments below walk the section order."""
     if ski_df.empty:
         st.info("No snow activities found in the archive.")
         return
@@ -1035,6 +1062,10 @@ def _fmt_pace(pace_sec):
 
 
 def render_swim_tab(swim_df, settings, df=None):
+    """Swim tab. Mirrors render_bike_tab's overall shape, keyed on distance
+    (meters/yards, toggled by the Units radio) with an "All time" option
+    alongside individual years where Bike/Snow only offer single periods.
+    The ``df`` parameter is accepted but currently unused."""
     if swim_df.empty:
         st.info("No swim activities found in the archive.")
         return
@@ -1095,7 +1126,7 @@ def render_swim_tab(swim_df, settings, df=None):
             make_swim_year_chart(yearly_plot, current_year, height=220),
         )
 
-    # --- All-time monthly pattern (which calendar months I actually swim) ---
+    # --- All-time monthly pattern (which calendar months you actually swim) ---
     _alltime_monthly_swim = _agg_swim_by_month(swim_df, None)
     _dc_all = 'meters' if _unit == 'Meters' else 'yards'
     if _alltime_monthly_swim['swims'].sum() > 0:
@@ -1379,9 +1410,14 @@ def render_activity_tab(df, gear_map, settings, *, sport_key, label, color, colo
 
 
 # ---------------------------------------------------------------------------
-# Mile Equity tab
+# Combined tab (cross-sport equity)
 # ---------------------------------------------------------------------------
 def render_equity_tab(df, settings):
+    """Combined tab: the app's cross-sport "equity miles" view. All-time stats
+    line (total + each sport's share), a multi-year overview chart, a
+    year-selector + stats box + monthly breakdown, a Top Ten Months table,
+    and a table of manually-declared "custom" equity (see
+    process_data.reconcile_equity_declarations for the counting policy)."""
     goals       = settings.get('goals', {})
     annual_goal = goals.get('annual_equity_miles', 0)
     monthly_goal= goals.get('monthly_equity_miles', 0)
@@ -1499,7 +1535,9 @@ def render_equity_tab(df, settings):
 
 
 # ---------------------------------------------------------------------------
-# Period / sport filter helpers
+# Period / sport filter helpers — used by the Wrapped and Export tabs' period
+# and activity-group selectors (not the Bike/Snow/Swim tabs, which use their
+# own Year/Season/Month selectors instead).
 # ---------------------------------------------------------------------------
 
 def _build_period_options(df):
@@ -1794,6 +1832,14 @@ def _wrapped_legend_strip(label_low="Less", label_high="More"):
 # Wrapped tab
 # ---------------------------------------------------------------------------
 def render_wrapped_tab(df, settings, athlete_profile):
+    """Wrapped tab — a Spotify-Wrapped-style "reveal" for an arbitrary
+    period/sport selection (not just a fixed year like Strava's own Wrapped):
+    period + sport + Year/Month breakdown controls, a hero number with a
+    prior-period delta, KPI cards, a trend chart + sport-breakdown donut, an
+    activity calendar heatmap, PR-flagged records, fun facts, and a longest-
+    activities table. Uses the period/sport filter helpers above, so its
+    prior-period comparison is period-type-aware (year-over-year, same month
+    last year, or trailing-N-days-over-trailing-N-days)."""
     today = date.today()
     current_year = today.year
 
@@ -1943,7 +1989,12 @@ def render_wrapped_tab(df, settings, athlete_profile):
 
 
 # ---------------------------------------------------------------------------
-# Trends tab
+# Trends tab — NOT currently wired to any page/nav entry (no _p_* function or
+# _view_pages/_tools_pages listing calls this). Likely an earlier prototype
+# of the recent-months comparison idea that the per-tab "Experiments" section
+# (render_month_view/render_week_view) superseded. Kept as-is rather than
+# deleted since it's still functional if reconnected — flagging here so it
+# doesn't read as a live tab.
 # ---------------------------------------------------------------------------
 def render_trends_tab(df):
     today = date.today()
@@ -2141,6 +2192,13 @@ def _to_csv(df):
 
 
 def render_export_tab(df, settings):
+    """Export tab, four sections: (1) period/sport-filtered activity summary
+    — charts + CSV/PNG downloads, reusing the same period/sport filter
+    helpers as Wrapped; (2) annual per-sport summary charts over the *full*
+    archive, unaffected by section 1's filter; (3) monthly breakdowns for a
+    selected year; (4) a "download everything" ZIP bundling every chart PNG
+    and table CSV generated above. PNG downloads degrade gracefully via
+    _png_download_button when kaleido has no Chrome to render with."""
     import calendar as _cal
     today = date.today()
     current_year = today.year
@@ -2562,7 +2620,7 @@ def render_settings_section(settings, section):
         st.divider()
         st.subheader("Why Equity Miles?")
         st.caption(
-            "My primary sport is biking, so a lot of my own effort naturally gets "
+            "If biking is your primary sport, a lot of your effort naturally gets "
             "measured in miles — but a week of skiing or swimming doesn't produce a "
             "mileage number that means anything next to a bike ride. Equity miles convert "
             "every sport's effort into one common unit (your reference sport below), so "

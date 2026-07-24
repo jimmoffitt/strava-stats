@@ -19,11 +19,21 @@ from datetime import datetime
 # VISUALIZATION ENGINE
 # ==============================================================================
 
-def create_mpl_table(data, columns, output_dir, filename, footer_text=None, legend_text=None, 
-                     legend_loc='top', highlight_last_rows=0, 
+def create_mpl_table(data, columns, output_dir, filename, footer_text=None, legend_text=None,
+                     legend_loc='top', highlight_last_rows=0,
                      fig_width=8, save_padding=0.1):
     """
-    Generates a clean table image using Matplotlib.
+    Render ``data`` (a list of row dicts) as a table image via matplotlib and
+    save it to output_dir/filename. Figure height is computed from row count
+    so the PNG crops tightly instead of leaving dead whitespace.
+
+    footer_text        — small gray caption centered below the table.
+    legend_text         — a boxed note pinned to a corner; legend_loc picks
+                          'top' (top-right) or 'bottom' (bottom-right, and
+                          reserves extra vertical padding for it).
+    highlight_last_rows — shade + bold the trailing N rows (e.g. a totals row).
+    fig_width           — figure width in inches; height is derived, not set.
+    save_padding        — inches of padding passed to bbox_inches='tight'.
     """
     if not data:
         print(f"⚠️ Warning: No data provided for {filename}")
@@ -105,7 +115,7 @@ def create_mpl_table(data, columns, output_dir, filename, footer_text=None, lege
     print(f"📸 Saved image: {save_path}")
 
 
-# --- NEW CHARTS ---
+# --- Matplotlib line/bar charts (as opposed to the create_mpl_table tables above) ---
 
 def plot_annual_activities(df, output_dir):
     """
@@ -292,8 +302,9 @@ def generate_bike_heatmap_png(archive_file: str, output_dir: str,
 
 def publish_dashboard(summary, df, output_dir):
     """
-    Orchestrates the creation of all report images.
-    Now accepts 'df' to generate charts.
+    Orchestrates the creation of every report image: the matplotlib line/bar
+    charts (from the raw activity df) and the summary tables (from the
+    summarize_stats() dict) — the single entry point run_pipeline.py calls.
     """
     if not summary:
         print("No summary data to publish.")
@@ -306,7 +317,7 @@ def publish_dashboard(summary, df, output_dir):
         plot_annual_activities(df, output_dir)
         plot_cumulative_bike(df, output_dir)
 
-    # --- Generate Tables (Existing logic) ---
+    # --- Generate Tables ---
     # 1. Global Stats
     if 'global_stats' in summary:
         g = summary['global_stats']
@@ -336,17 +347,20 @@ def publish_dashboard(summary, df, output_dir):
         eq = summary['equity_stats']
         breakdown = eq.get('breakdown', [])
         annual = summary.get('annual_totals', [])
-        # Hardcoded check for 2025/Current year logic could be improved here, but keeping simple for now
-        bike_miles_2025 = next((item['bike_miles'] for item in annual if item['year'] == 2025), 0)
-        
-        if breakdown or bike_miles_2025 > 0:
+        # summarize_stats() computes 'breakdown' for its own max_year (see that
+        # function's docstring) — match "Actual Bike" to the same year rather
+        # than a hardcoded one, or this silently prints 0 once that year passes.
+        latest_year = max((item['year'] for item in annual), default=None)
+        bike_miles_current = next((item['bike_miles'] for item in annual if item['year'] == latest_year), 0)
+
+        if breakdown or bike_miles_current > 0:
             eq_table_data = []
             running_total = 0
             for row in breakdown:
                 eq_table_data.append({'Sport': row['source_sport'], 'Source Dist': f"{row['source_val']:,.0f} {row['source_unit']}", 'Total Miles': row['total_miles']})
                 running_total += row['total_miles']
-            eq_table_data.append({'Sport': 'Actual Bike', 'Source Dist': '-', 'Total Miles': bike_miles_2025})
-            running_total += bike_miles_2025
+            eq_table_data.append({'Sport': 'Actual Bike', 'Source Dist': '-', 'Total Miles': bike_miles_current})
+            running_total += bike_miles_current
             eq_table_data.append({'Sport': 'TOTAL', 'Source Dist': '-', 'Total Miles': running_total})
 
             legend_txt = "Mileage Equivalents:\n• Snow sports: 1,000 vert ft = 1 bike mile\n• Swimming: 100 meters = 1 bike mile"

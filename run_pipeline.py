@@ -28,9 +28,7 @@ def main():
             json.dump(profile, f, indent=2)
         print(f"Athlete profile written: {profile.get('firstname')} {profile.get('lastname')}")
 
-        gear_map = {k: v for k, v in {
-            **fetch_data.fetch_active_gear(token)
-        }.items()}
+        gear_map = fetch_data.fetch_active_gear(token)
         merged_gear = {**config.GEAR_FALLBACKS, **gear_map}
         with open(config.GEAR_MAP_FILE, 'w') as f:
             json.dump(merged_gear, f, indent=2)

@@ -339,7 +339,7 @@ def aggregate_swim_by_month(swim_df, year=None):
     """
     Returns DataFrame with one row per month (1–12) for the given year, or
     summed across every year when year is None (the all-time monthly
-    pattern — which calendar months Jim actually swims in).
+    pattern — which calendar months this athlete actually swims in).
     Columns: month, month_name, swims, meters, yards, hours.
     Missing months filled with 0.
     """
@@ -584,6 +584,15 @@ def get_ski_days_table(ski_df, season_key=None):
 def summarize_stats(df, gear_map=None):
     """
     Aggregates data into the specific dictionary structure required by the Publish module.
+
+    This is the legacy static-PNG pipeline's summary builder (run_pipeline.py
+    -> summarize_stats -> publish_data.publish_dashboard), not what the
+    interactive Streamlit app uses. Its 'Equity Analysis' section below is a
+    simplified, hardcoded-rate, current-year-only calculation kept only to
+    feed that one PNG table — the real, settings-driven equity system
+    (configurable rates, manual declarations, multi-year) lives further down
+    this file in _equity_rates / reconcile_equity_declarations /
+    aggregate_equity_by_year, which is what app.py's Combined tab uses.
     """
     if df.empty: return {}
     if gear_map is None: gear_map = {}
@@ -653,7 +662,6 @@ def summarize_stats(df, gear_map=None):
         swim_m = y_df[y_df['final_type'] == 'Swim']['distance'].sum()
         
         # Ski: Sum vertical feet (AlpineSki, BackcountrySki, NordicSki, Snowboard)
-        # Note: 'final_type' might be just 'AlpineSki' etc. if not caught by custom logic.
         ski_types = ['AlpineSki', 'BackcountrySki', 'NordicSki', 'Snowboard']
         ski_ft = y_df[y_df['final_type'].isin(ski_types)]['elevation_feet'].sum()
         
@@ -696,9 +704,12 @@ def summarize_stats(df, gear_map=None):
             'total_miles': ski_elev / 1000.0
         })
 
-    # Gardening/Hiking (Direct mileage if present)
-    # If Hiking/Gardening has distance, we add it 1:1? Or just list it?
-    # Assuming 1:1 for now based on "Eq" concept.
+    # Gardening/Hiking: counted 1:1 (their raw distance_miles *is* the equity
+    # total) rather than converted through a rate like swim/ski above. This
+    # predates the general equity-declaration system and only ever matched
+    # a 'final_type' of literally 'Hiking' or 'Gardening', which Strava
+    # doesn't emit — effectively dead in practice, kept as-is since this
+    # whole function is legacy (see its docstring).
     for specialized in ['Hiking', 'Gardening']:
         spec_dist = cy_df[cy_df['final_type'] == specialized]['distance_miles'].sum()
         if spec_dist > 0:
